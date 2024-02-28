@@ -6,7 +6,7 @@ from geomdl.visualization import VisVTK
 # import taichi as ti
 import torch
 
-from aabspline import test
+from aabspline import gen_AABB
 
 # ti.init(arch=ti.gpu)
 RES = 40
@@ -46,7 +46,9 @@ surf = gen_surface(ctrlpts)
 # container.vis = VisVTK.VisSurface()
 # container.render()
 
-test(torch.tensor(surf.knotvector_u).cuda())
+gen_AABB(torch.tensor(surf.knotvector_u).cuda(),
+         torch.tensor(surf.knotvector_v).cuda(),
+         20, 10, 3)
 
-surf.vis = VisVTK.VisSurface(config=VisVTK.VisConfig(ctrlpts=False))
-surf.render()
+# surf.vis = VisVTK.VisSurface(config=VisVTK.VisConfig(ctrlpts=False))
+# surf.render()

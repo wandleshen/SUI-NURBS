@@ -1,11 +1,47 @@
 import torch
 
-def test(knotvector):
-    print(basic_func(torch.tensor([[.5, .02, 0.],[.5, .02, 0.]]).cuda(), 3, torch.tensor([[8, 9, 10, 11],[8, 9, 10, 11]]).cuda(), knotvector))
+# TODO: Get the min and max value in three axes
+def gen_AABB(knotvector_u, knotvector_v, m, n, p):
+    u, i = gen_intervals(knotvector_u, m, p)
+    if u is None:
+        return
+    print(basic_func(u, p, i, knotvector_u))
 
-# TODO: Get proper `i` for every point
-#       Cal two direction's basic function at the same time
-#       Get the min and max value in three axes
+def gen_intervals(knotvector, n, p):
+    if n < len(knotvector)-2*p:
+        print('[ERROR] Too few sampled intervals for the given knotvector')
+        return
+    # Generate intervals
+    diff = knotvector[1:] - knotvector[:-1]
+    # Start of nonzero intervals
+    non_zeros = torch.nonzero(diff).flatten()
+    i = non_zeros
+    intervals = diff[non_zeros]
+    # Split the intervals
+    n_intervals = intervals.shape[0]
+    if n > n_intervals:
+        split = n - n_intervals
+        div = split // n_intervals
+        mod = split % n_intervals
+        splits = torch.zeros(n_intervals, dtype=torch.int32).cuda()
+        splits[:mod] = div + 2
+        splits[mod:] = div + 1
+        i = torch.repeat_interleave(i, splits)
+        intervals = torch.repeat_interleave(intervals, splits)
+        splits = torch.repeat_interleave(splits, splits)
+        intervals /= splits
+    # Generate the cumulative intervals
+    cumsum = torch.zeros(intervals.shape[0]+1, dtype=torch.float32).cuda()
+    cumsum[1:] = torch.cumsum(intervals, dim=0)
+    orig = torch.stack((cumsum[:-1], cumsum[1:]), dim=1)
+    # Generate all `i`s and `u`s for N_{i,p}
+    range_t = torch.arange(-p, 1, 1).cuda()
+    i = i[:, None] + range_t[None, :]
+    u = torch.zeros_like(orig, dtype=torch.float32).cuda()
+    u[:, 0] = (orig[:, 1] + orig[:, 0]) / 2.
+    u[:, 1] = (orig[:, 1] - orig[:, 0]) / 2.
+    return u, i
+
 def basic_func(u, p, i, knotvector):
     '''Function
     Generate the basic function N_{i,p} at u
@@ -24,14 +60,13 @@ def basic_func(u, p, i, knotvector):
     mask = torch.abs(divisor_ip) > 1e-6
     a[..., 0] = torch.where(mask, (u[:, None, 0] - knotvector[i]), torch.zeros_like(a[..., 0]))
     a[..., 1] = torch.where(mask, u[:, None, 1], torch.zeros_like(a[..., 1]))
+    N[mask] += AA_times(a[mask], basic_func(u, p-1, i, knotvector)[mask]) / divisor_ip[mask][...,None]
 
     divisor_ip1i1 = knotvector[i+p+1] - knotvector[i+1]
     mask = torch.abs(divisor_ip1i1) > 1e-6
     b[..., 0] = torch.where(mask, (knotvector[i+p+1] - u[:, None, 0]), torch.zeros_like(b[..., 0]))
     b[..., 1] = torch.where(mask, u[:, None, 1], torch.zeros_like(b[..., 1]))
-
-    N += AA_times(a, basic_func(u, p-1, i, knotvector)) / divisor_ip[...,None]
-    N += AA_times(b, basic_func(u, p-1, i+1, knotvector)) / divisor_ip1i1[...,None]
+    N[mask] += AA_times(b[mask], basic_func(u, p-1, i+1, knotvector)[mask]) / divisor_ip1i1[mask][...,None]
 
     return N
 
