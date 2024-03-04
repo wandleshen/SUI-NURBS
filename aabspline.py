@@ -1,11 +1,10 @@
 import torch
 
-# TODO: Get the min and max value in three axes
-def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q):
+def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1., eps=.01):
     # Get all basic_funcs
-    u, i = gen_intervals(knotvector_u, m, p)
+    u, i = gen_intervals(knotvector_u, m, p, eps)
     Ni = basic_func(u, p, i, knotvector_u) # [m, p+1, 3]
-    v, j = gen_intervals(knotvector_v, n, q)
+    v, j = gen_intervals(knotvector_v, n, q, eps)
     Nj = basic_func(v, q, j, knotvector_v) # [n, q+1, 3]
 
     # Cal `P({\hat u},{\hat v})`
@@ -19,10 +18,12 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q):
 
     # N_i({\hat u})N_j({\hat v})P_{i,j}
     NiNjP = torch.einsum('ijklm,ijkln->ijnm', NiNj, Pij) # [m, n, 3, 3]
-    print(NiNjP)
-    return NiNjP[...,0].reshape(-1,3)
+    aabb = torch.zeros([m, n, 2, 3])
+    aabb[..., 0, :] = NiNjP[..., 0] - torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
+    aabb[..., 1, :] = NiNjP[..., 0] + torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
+    return aabb.reshape(-1,2,3)
 
-def gen_intervals(knotvector, n, p):
+def gen_intervals(knotvector, n, p, eps=.01):
     if n < len(knotvector)-2*p:
         print('[ERROR] Too few sampled intervals for the given knotvector')
         raise Exception()
@@ -49,6 +50,8 @@ def gen_intervals(knotvector, n, p):
     # Generate the cumulative intervals
     cumsum = torch.zeros(intervals.shape[0]+1, dtype=torch.float32).cuda()
     cumsum[1:] = torch.cumsum(intervals, dim=0)
+    cumsum[0] -= eps
+    cumsum[-1] += eps
     orig = torch.stack((cumsum[:-1], cumsum[1:]), dim=1)
     # Generate all `i`s and `u`s for N_{i,p}
     range_t = torch.arange(-p, 1, 1).cuda()
@@ -89,5 +92,6 @@ def aa_times(lhs, rhs):
     abs_rhs = torch.abs(rhs)
     res[..., 0] = lhs[..., 0] * rhs[..., 0]
     res[..., 1] = lhs[..., 1] * rhs[..., 0] + lhs[..., 0] * rhs[..., 1]
-    res[..., 2] = (abs_lhs[..., 1] + abs_lhs[..., 2]) * (abs_rhs[..., 1] + abs_rhs[..., 2])
+    # res[..., 2] = (abs_lhs[..., 1] + abs_lhs[..., 2]) * (abs_rhs[..., 1] + abs_rhs[..., 2])
+    res[..., 2] = (lhs[..., 1] + lhs[..., 2]) * (rhs[..., 1] + rhs[..., 2])
     return res
