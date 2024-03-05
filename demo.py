@@ -6,6 +6,7 @@ import vtk
 import torch
 
 from aabspline import gen_aabb
+from overlaptest import region_extraction
 
 # Control points
 ctrlpts = np.array(
@@ -289,19 +290,19 @@ def gen_surface(ctrlpts):
 
 surf = gen_surface(ctrlpts4d.tolist())
 
-pts = (
-    gen_aabb(
-        torch.tensor(surf.knotvector_u).cuda(),
-        torch.tensor(surf.knotvector_v).cuda(),
-        torch.tensor(surf.ctrlpts2d).cuda(),
-        N,
-        N,
-        3,
-        3,
-    )
-    .cpu()
-    .numpy()
+pts = gen_aabb(
+    torch.tensor(surf.knotvector_u).cuda(),
+    torch.tensor(surf.knotvector_v).cuda(),
+    torch.tensor(surf.ctrlpts2d).cuda(),
+    N,
+    N,
+    3,
+    3,
 )
+
+col1, col2 = region_extraction(pts, pts)
+
+pts = pts.cpu().numpy().reshape(-1, 2, 3)
 
 # Create a renderer, render window, and interactor.
 renderer = vtk.vtkRenderer()

@@ -6,16 +6,16 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     Generate Axis-Aligned Bounding Boxes (AABBs) for a given NURBS surface
 
     Parameters:
-    knotvector_u: Knot vector in the U direction
-    knotvector_v: Knot vector in the V direction
-    ctrlpts: Control points
-    m, n: Number of AABBs in U or V direction
-    p, q: Degree of the surface in U or V direction
-    delta: Amount to expand the bounding box
-    eps: Value for the edge of surface's bounding boxes expansion
+    knotvector_u (torch.Tensor): Knot vector in the U direction
+    knotvector_v (torch.Tensor): Knot vector in the V direction
+    ctrlpts (torch.Tensor): Control points
+    m, n (int): Number of AABBs in U or V direction
+    p, q (int): Degree of the surface in U or V direction
+    delta (float): Amount to expand the bounding box
+    eps (float): Value for the edge of surface's bounding boxes expansion
 
     Returns:
-    aabb: Axis-Aligned Bounding Boxes
+    aabb (torch.Tensor): Axis-Aligned Bounding Boxes
     """
 
     # Get all basic functions
@@ -51,10 +51,10 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     )  # [m, n, 3, 3]
 
     # Calculate AABB
-    aabb = torch.zeros([m, n, 2, 3])
+    aabb = torch.zeros([m, n, 2, 3]).cuda()
     aabb[..., 0, :] = NiNjP[..., 0] - torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
     aabb[..., 1, :] = NiNjP[..., 0] + torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
-    return aabb.reshape(-1, 2, 3)
+    return aabb
 
 
 def gen_intervals(knotvector, n, p, eps=0.01):
@@ -62,14 +62,14 @@ def gen_intervals(knotvector, n, p, eps=0.01):
     Generate intervals for a given knot vector.
 
     Parameters:
-    knotvector: The knot vector
-    n: Number of intervals
-    p: Degree of the B-spline basis function
-    eps: Value for the edge of surface's bounding boxes expansion
+    knotvector (torch.Tensor): The knot vector
+    n (int): Number of intervals
+    p (int): Degree of the B-spline basis function
+    eps (float): Value for the edge of surface's bounding boxes expansion
 
     Returns:
-    u: The affine arithmetics values for each interval
-    i: The index of the left knot of each interval
+    u (torch.Tensor): The affine arithmetics values for each interval
+    i (torch.Tensor): The index of the left knot of each interval
     """
     if n < len(knotvector) - 2 * p:
         print("[ERROR] Too few sampled intervals for the given knotvector")
@@ -114,13 +114,13 @@ def basic_func(u, p, i, knotvector):
     Calculate the B-spline basis function N_{i,p}(u).
 
     Parameters:
-    u: The affine arithmetics values
-    p: The degree of the B-spline basis function
-    i: The index of the left knot
-    knotvector: The knot vector
+    u (torch.Tensor): The affine arithmetics values
+    p (int): The degree of the B-spline basis function
+    i (torch.Tensor): The index of the left knot
+    knotvector (torch.Tensor): The knot vector
 
     Returns:
-    N: The B-spline basis function values
+    N (torch.Tensor): The B-spline basis function values
     """
     n = u.shape[0]
     m = i.shape[1]
@@ -164,12 +164,12 @@ def aa_times(lhs, rhs, is3x3=False):
     Perform affine arithmetic operations.
 
     Parameters:
-    lhs: Left-hand side affine form
-    rhs: Right-hand side affine form
-    is3x3: Flag to indicate if the operation is for values w/ 2 noises
+    lhs (torch.Tensor): Left-hand side affine form
+    rhs (torch.Tensor): Right-hand side affine form
+    is3x3 (bool): Flag to indicate if the operation is for values w/ 2 noises
 
     Returns:
-    res: The result of the affine arithmetic operation
+    res (torch.Tensor): The result of the affine arithmetic operation
     """
     res = torch.zeros_like(lhs).cuda()
     # abs_lhs = torch.abs(lhs)
