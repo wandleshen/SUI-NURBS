@@ -1,12 +1,12 @@
 # encoding: utf-8
 
-from geomdl import NURBS, knotvector
 import numpy as np
-import vtk
 import torch
 
 from aabspline import gen_aabb
 from overlaptest import region_extraction
+import utils
+
 
 # Control points
 ctrlpts = np.array(
@@ -254,8 +254,6 @@ ctrlpts = np.array(
     ]
 )
 
-# ti.init(arch=ti.gpu)
-RES = 50
 M = 10
 N = 20
 
@@ -265,30 +263,9 @@ ctrlpts4d = np.concatenate(
 # even_rows = np.arange(1, ctrlpts4d.shape[1], 2)
 # ctrlpts4d[:, even_rows, -1] = .9
 
+ctrlpts4d_rev = ctrlpts4d[..., [1, 0, 2, 3]]
 
-def gen_surface(ctrlpts):
-    # Create a NURBS surface
-    surf = NURBS.Surface()
-
-    # Set degrees
-    surf.degree_u = 3
-    surf.degree_v = 3
-
-    # Set control points
-    surf.ctrlpts2d = ctrlpts
-
-    surf.knotvector_u = knotvector.generate(3, len(ctrlpts))
-    surf.knotvector_v = knotvector.generate(3, len(ctrlpts[0]))
-
-    # Set evaluation delta
-    surf.delta = 1.0 / RES
-
-    # Evaluate surface points
-    surf.evaluate()
-    return surf
-
-
-surf = gen_surface(ctrlpts4d.tolist())
+surf = utils.gen_surface(ctrlpts4d.tolist())
 
 pts = gen_aabb(
     torch.tensor(surf.knotvector_u).cuda(),
@@ -300,71 +277,21 @@ pts = gen_aabb(
     3,
 )
 
-col1, col2 = region_extraction(pts, pts)
+surf2 = utils.gen_surface(ctrlpts4d_rev.tolist())
 
-pts = pts.cpu().numpy().reshape(-1, 2, 3)
+pts2 = gen_aabb(
+    torch.tensor(surf2.knotvector_u).cuda(),
+    torch.tensor(surf2.knotvector_v).cuda(),
+    torch.tensor(surf2.ctrlpts2d).cuda(),
+    N,
+    N,
+    3,
+    3,
+)
 
-# Create a renderer, render window, and interactor.
-renderer = vtk.vtkRenderer()
-render_window = vtk.vtkRenderWindow()
-render_window.AddRenderer(renderer)
-render_window_interactor = vtk.vtkRenderWindowInteractor()
-render_window_interactor.SetRenderWindow(render_window)
+col, col2 = region_extraction(pts, pts2)
 
-# Iterate over all given AABB diagonal pairs, create and display each box.
-for min_point, max_point in zip(pts[:, 0], pts[:, 1]):
-    # Create AABB box.
-    box = vtk.vtkCubeSource()
-    box.SetBounds(
-        min_point[0],
-        max_point[0],
-        min_point[1],
-        max_point[1],
-        min_point[2],
-        max_point[2],
-    )
-    box.Update()
+extract, pts = utils.extract_aabb(pts, col)
+extract2, pts2 = utils.extract_aabb(pts2, col2)
 
-    # Create mapper and actor.
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputConnection(box.GetOutputPort())
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
-    actor.GetProperty().SetRepresentationToWireframe()
-    actor.GetProperty().SetColor(1.0, 0.0, 0.0)
-
-    # Add to renderer.
-    renderer.AddActor(actor)
-
-# Add evaluation points
-plane_points = np.array(surf.evalpts)
-points = vtk.vtkPoints()
-polydata = vtk.vtkPolyData()
-
-# Add evaluation points to VTK points structure.
-for point in plane_points:
-    points.InsertNextPoint(point.tolist())
-
-# Create point-based Delaunay 2D grid object and mapper.
-delaunay = vtk.vtkDelaunay2D()
-delaunay.SetInputData(polydata)
-delaunay.Update()
-
-polydata.SetPoints(points)
-polydata.Modified()
-
-polydata_mapper = vtk.vtkPolyDataMapper()
-polydata_mapper.SetInputConnection(delaunay.GetOutputPort())
-
-polydata_actor = vtk.vtkActor()
-polydata_actor.SetMapper(polydata_mapper)
-polydata_actor.GetProperty().SetColor(0.0, 1.0, 0.0)
-
-# Add to renderer.
-renderer.AddActor(polydata_actor)
-
-# Set camera position, start rendering and interactor.
-renderer.ResetCamera()
-render_window.Render()
-render_window_interactor.Initialize()
-render_window_interactor.Start()
+utils.render(pts, pts2, surf, surf2, extract, extract2)
