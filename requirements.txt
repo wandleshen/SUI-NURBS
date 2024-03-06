@@ -1,0 +1,4 @@
+geomdl
+imgui[glfw]
+numpy
+vtk

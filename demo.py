@@ -3,9 +3,9 @@
 import numpy as np
 import torch
 
-from aabspline import gen_aabb
-from overlaptest import region_extraction
-import utils
+from src.aabspline import gen_aabb
+from src.overlaptest import region_extraction
+from src import utils
 
 
 # Control points
