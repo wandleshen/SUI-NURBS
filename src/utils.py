@@ -54,6 +54,7 @@ def draw_aabb(pts, renderer, isRed=True):
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
         actor.GetProperty().SetRepresentationToWireframe()
+        actor.GetProperty().SetLighting(False)
         if isRed:
             actor.GetProperty().SetColor(1.0, 0.0, 0.0)
         else:
@@ -155,6 +156,8 @@ def render(
     surf2,
     extract1,
     extract2,
+    stripped1,
+    stripped2,
     window_name="SUI-NURBS",
     width=1280,
     height=720,
@@ -163,9 +166,6 @@ def render(
     imgui.create_context()
     impl = GlfwRenderer(window)
 
-    # 创建VTK的交互器
-    interactor = vtk.vtkRenderWindowInteractor()
-    interactor.SetRenderWindow(render_window)
     renderer.ResetCamera()
     renderer.SetBackground(0.1, 0.2, 0.4)
 
@@ -191,6 +191,7 @@ def render(
             # 水平和垂直平移视图
             pan_camera(camera, -deltaX, deltaY)
 
+        renderer.ResetCameraClippingRange()
         camera.OrthogonalizeViewUp()
         lastX = xpos
         lastY = ypos
@@ -206,23 +207,20 @@ def render(
 
     # 设置滚轮事件的回调函数
     def on_mouse_scroll(window, xoffset, yoffset):
+        camera = renderer.GetActiveCamera()
         if yoffset > 0:
-            interactor.InvokeEvent("MouseWheelForwardEvent")
-        elif yoffset < 0:
-            interactor.InvokeEvent("MouseWheelBackwardEvent")
+            camera.Zoom(1.1)
+        else:
+            camera.Zoom(0.9)
+        renderer.ResetCameraClippingRange()
 
     glfw.set_cursor_pos_callback(window, on_mouse_move)
     glfw.set_scroll_callback(window, on_mouse_scroll)
     glfw.set_mouse_button_callback(window, on_mouse_button)
 
-    checkboxes = [True, True, True, True]
-    changes = [False, False, False, False]
+    checkboxes = [False, False, True, True, False, False]
+    changes = [False, False, False, False, False, False]
     actors_dict = {}
-
-    actors_dict["aabb1"] = draw_aabb(aabb1, renderer)
-    actors_dict["aabb2"] = draw_aabb(aabb2, renderer)
-    actors_dict["ext1"] = draw_aabb(extract1, renderer, isRed=False)
-    actors_dict["ext2"] = draw_aabb(extract2, renderer, isRed=False)
 
     actors_dict["surf1"] = draw_surf(surf1, renderer)
     actors_dict["surf2"] = draw_surf(surf2, renderer, isGreen=False)
@@ -236,6 +234,8 @@ def render(
         changes[1], checkboxes[1] = imgui.checkbox("AABB2", checkboxes[1])
         changes[2], checkboxes[2] = imgui.checkbox("Surface1", checkboxes[2])
         changes[3], checkboxes[3] = imgui.checkbox("Surface2", checkboxes[3])
+        changes[4], checkboxes[4] = imgui.checkbox("Stripped AABB1", checkboxes[4])
+        changes[5], checkboxes[5] = imgui.checkbox("Stripped AABB2", checkboxes[5])
 
         imgui.end()
         imgui.render()
@@ -282,6 +282,28 @@ def render(
             checkboxes,
             surf2,
             isGreen=False,
+        )
+        handle_changes(
+            4,
+            "stripped1",
+            draw_aabb,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            stripped1,
+            isRed=False,
+        )
+        handle_changes(
+            5,
+            "stripped2",
+            draw_aabb,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            stripped2,
+            isRed=False,
         )
 
         impl.render(imgui.get_draw_data())

@@ -16,6 +16,7 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
 
     Returns:
     aabb (torch.Tensor): Axis-Aligned Bounding Boxes
+    u, v (torch,Tensor): Chosen intervals along the U or V direction
     """
 
     # Get all basic functions
@@ -23,6 +24,13 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     Ni = basic_func(u, p, i, knotvector_u)  # [m, p+1, 3]
     v, j = gen_intervals(knotvector_v, n, q, eps)
     Nj = basic_func(v, q, j, knotvector_v)  # [n, q+1, 3]
+
+    u[:, 1] *= delta
+    v[:, 1] *= delta
+    u = torch.stack([(u[:, 0] - u[:, 1]), (u[:, 0] + u[:, 1])], dim=1)
+    v = torch.stack([(v[:, 0] - v[:, 1]), (v[:, 0] + v[:, 1])], dim=1)
+    u = torch.clamp(u, 0.0, 1.0)
+    v = torch.clamp(v, 0.0, 1.0)
 
     # Calculate `P({\hat u},{\hat v})`
     i_expand = i[:, None, :, None].expand(-1, n, -1, q + 1)  # [m, n, p+1, q+1]
@@ -52,9 +60,9 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
 
     # Calculate AABB
     aabb = torch.zeros([m, n, 2, 3]).cuda()
-    aabb[..., 0, :] = NiNjP[..., 0] - torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
-    aabb[..., 1, :] = NiNjP[..., 0] + torch.abs(NiNjP[..., 1:3]).sum(dim=-1) * delta
-    return aabb
+    aabb[..., 0, :] = NiNjP[..., 0] - torch.abs(NiNjP[..., 1:3]).sum(dim=-1)
+    aabb[..., 1, :] = NiNjP[..., 0] + torch.abs(NiNjP[..., 1:3]).sum(dim=-1)
+    return aabb, u, v
 
 
 def gen_intervals(knotvector, n, p, eps=0.01):
