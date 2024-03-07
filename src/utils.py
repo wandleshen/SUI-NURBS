@@ -7,9 +7,6 @@ from imgui.integrations.glfw import GlfwRenderer
 from geomdl import NURBS, knotvector
 
 
-RES = 50
-
-
 def impl_glfw_init(window_name="SUI-NURBS", width=1280, height=720):
     if not glfw.init():
         print("Could not initialize OpenGL context")
@@ -175,6 +172,8 @@ def render(
     # 鼠标移动事件处理函数
     def on_mouse_move(window, xpos, ypos):
         global lastX, lastY
+        if imgui.get_io().want_capture_mouse:
+            return
         camera = renderer.GetActiveCamera()
         if glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS:
             deltaX = xpos - lastX
@@ -199,6 +198,8 @@ def render(
     # 鼠标按钮事件处理函数
     def on_mouse_button(window, button, action, mods):
         global lastX, lastY
+        if imgui.get_io().want_capture_mouse:
+            return
         if button == glfw.MOUSE_BUTTON_LEFT:
             if action == glfw.PRESS:
                 (xpos, ypos) = glfw.get_cursor_pos(window)
@@ -207,6 +208,8 @@ def render(
 
     # 设置滚轮事件的回调函数
     def on_mouse_scroll(window, xoffset, yoffset):
+        if imgui.get_io().want_capture_mouse:
+            return
         camera = renderer.GetActiveCamera()
         if yoffset > 0:
             camera.Zoom(1.1)
@@ -314,7 +317,7 @@ def render(
     glfw.terminate()
 
 
-def gen_surface(ctrlpts):
+def gen_surface(ctrlpts, res=50):
     # Create a NURBS surface
     surf = NURBS.Surface()
 
@@ -329,7 +332,7 @@ def gen_surface(ctrlpts):
     surf.knotvector_v = knotvector.generate(3, len(ctrlpts[0]))
 
     # Set evaluation delta
-    surf.delta = 1.0 / RES
+    surf.delta = 1.0 / res
 
     # Evaluate surface points
     surf.evaluate()
