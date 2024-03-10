@@ -48,3 +48,41 @@ def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2):
 
     indices = torch.nonzero(overlaps)
     return aabb1[indices[:, 0]].cpu().numpy(), aabb2[indices[:, 1]].cpu().numpy()
+
+
+# TODO: 等论文读完实现这个算法
+def sequence_joining(grid, width):
+    pass
+
+
+def point_to_surface(evalpts, points):
+    _, indices = torch.min(
+        torch.norm(evalpts.unsqueeze(0) - points.unsqueeze(1), dim=2), dim=1
+    )
+    return evalpts[indices]
+
+
+def accuracy_improvement(pts, surf1, surf2, max_iter=20):
+    mask = torch.ones(pts.shape[0], dtype=bool).cuda()
+    evalpts1 = torch.tensor(surf1.evalpts).cuda()
+    evalpts2 = torch.tensor(surf2.evalpts).cuda()
+    while torch.any(mask) and max_iter > 0:
+        d1 = point_to_surface(evalpts1, pts[mask])
+        d2 = point_to_surface(evalpts2, pts[mask])
+        d1p = pts[mask] - d1
+        d2p = pts[mask] - d2
+        normals = torch.cross(d1p, d2p, dim=1)
+        A = torch.stack([d1p, d2p, normals], dim=1)
+        b = torch.stack(
+            [
+                torch.sum(d1p * d1, dim=1),
+                torch.sum(d2p * d2, dim=1),
+                torch.zeros_like(d1p[:, 0]),
+            ],
+            dim=1,
+        )
+        x = torch.linalg.solve(A, b)
+        mask = (torch.norm(x - pts, dim=1)) > 1e-3
+        pts[mask] = x
+        max_iter -= 1
+    return pts
