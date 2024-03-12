@@ -29,8 +29,8 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     v[:, 1] *= delta
     u = torch.stack([(u[:, 0] - u[:, 1]), (u[:, 0] + u[:, 1])], dim=1)
     v = torch.stack([(v[:, 0] - v[:, 1]), (v[:, 0] + v[:, 1])], dim=1)
-    u = torch.clamp(u, 0.0, 1.0)
-    v = torch.clamp(v, 0.0, 1.0)
+    u = torch.clamp(u, knotvector_u[0], knotvector_u[-1])
+    v = torch.clamp(v, knotvector_v[0], knotvector_v[-1])
 
     # Calculate `P({\hat u},{\hat v})`
     i_expand = i[:, None, :, None].expand(-1, n, -1, q + 1)  # [m, n, p+1, q+1]

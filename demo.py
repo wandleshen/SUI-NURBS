@@ -5,7 +5,7 @@ import torch
 
 from src.aabspline import gen_aabb
 from src.overlaptest import region_extraction
-from src.curvegeneration import strip_thinning
+from src.curvegeneration import gen_curves
 from src import utils
 
 
@@ -266,7 +266,7 @@ ctrlpts4d = np.concatenate(
 
 ctrlpts4d_rev = ctrlpts4d[..., [1, 0, 2, 3]]
 
-surf = utils.gen_surface(ctrlpts4d.tolist())
+surf = utils.gen_surface(ctrlpts4d.tolist(), 100)
 
 pts, u1, v1 = gen_aabb(
     torch.tensor(surf.knotvector_u).cuda(),
@@ -278,7 +278,7 @@ pts, u1, v1 = gen_aabb(
     3,
 )
 
-surf2 = utils.gen_surface(ctrlpts4d_rev.tolist())
+surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), 100)
 
 pts2, u2 ,v2 = gen_aabb(
     torch.tensor(surf2.knotvector_u).cuda(),
@@ -291,8 +291,8 @@ pts2, u2 ,v2 = gen_aabb(
 )
 
 col, col2 = region_extraction(pts, pts2)
-stripped, stripped2 = strip_thinning(u1, v1, col, surf, u2, v2, col2, surf2)
+gen_curves(u1, v1, col, surf, u2, v2, col2, surf2)
 extract, pts = utils.extract_aabb(pts, col)
 extract2, pts2 = utils.extract_aabb(pts2, col2)
 
-utils.render(pts, pts2, surf, surf2, extract, extract2, stripped, stripped2)
+utils.render(pts, pts2, surf, surf2, extract, extract2, None, None)

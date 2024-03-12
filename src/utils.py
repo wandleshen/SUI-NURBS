@@ -286,28 +286,28 @@ def render(
             surf2,
             isGreen=False,
         )
-        handle_changes(
-            4,
-            "stripped1",
-            draw_aabb,
-            renderer,
-            actors_dict,
-            changes,
-            checkboxes,
-            stripped1,
-            isRed=False,
-        )
-        handle_changes(
-            5,
-            "stripped2",
-            draw_aabb,
-            renderer,
-            actors_dict,
-            changes,
-            checkboxes,
-            stripped2,
-            isRed=False,
-        )
+        # handle_changes(
+        #     4,
+        #     "stripped1",
+        #     draw_aabb,
+        #     renderer,
+        #     actors_dict,
+        #     changes,
+        #     checkboxes,
+        #     stripped1,
+        #     isRed=False,
+        # )
+        # handle_changes(
+        #     5,
+        #     "stripped2",
+        #     draw_aabb,
+        #     renderer,
+        #     actors_dict,
+        #     changes,
+        #     checkboxes,
+        #     stripped2,
+        #     isRed=False,
+        # )
 
         impl.render(imgui.get_draw_data())
         glfw.swap_buffers(window)
