@@ -1,4 +1,5 @@
 import torch
+import math
 
 
 def cartesian_product_rowwise(tensor_a, tensor_b):
@@ -56,30 +57,108 @@ def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2):
     return uv1[indices[:, 0].unique()], uv2[indices[:, 1].unique()]
 
 
-def gen_grids(aabb):
+def gen_grids(aabb, surf):
     diff = aabb[:, 1] - aabb[:, 0]
     res = torch.tensor([torch.min(diff[:, 0]), torch.min(diff[:, 1])]).cuda()
     grid_min = torch.floor(aabb[:, 0] / res)
     grid_max = torch.ceil(aabb[:, 1] / res)
 
-    grid = torch.stack([grid_min, grid_max], dim=1)
-    return grid.int()
+    grids = torch.stack([grid_min, grid_max], dim=1).int()
+    graph = torch.zeros(
+        [
+            math.ceil(max(surf.knotvector_u) // res[0]),
+            math.ceil(max(surf.knotvector_v) // res[1]),
+        ],
+        dtype=bool,
+    ).cuda()
+    for grid in grids:
+        graph[grid[0, 0] : grid[1, 0] + 1, grid[0, 1] : grid[1, 1] + 1] = True
+    return grids[0], graph, res
 
 
-def is_grid_intersection(grid1, grid2):
-    return torch.any(
-        torch.all((grid1[:, 0] <= grid2[:, 1]), dim=1)
-        & torch.all((grid2[:, 0] <= grid1[:, 1]), dim=1)
-    )
+def is_has_feature(aabb, graph):
+    area = graph[aabb[0, 0] : aabb[1, 0] + 1, aabb[0, 1] : aabb[1, 1] + 1]
+    return torch.any(area)
 
 
 def sequence_joining(uv, surf, width):
-    f_grid = gen_grids(uv)
-    min_grid, max_grid = (
-        torch.min(f_grid.reshape(-1, 2), dim=0)[0],
-        torch.max(f_grid.reshape(-1, 2), dim=0)[0],
-    )
-    # TODO: 以第一个 grid 为起点，循环遍历生成整个序列
+    cluster, graph, res = gen_grids(uv, surf)
+    clusters = []
+    expand = torch.tensor([True, True, True, True]).cuda()  # Up, Left, Right, Down
+    neighbors = None
+    offset = torch.tensor(
+        [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]]
+    ).cuda()
+    while torch.any(graph):
+        while True:
+            neighbors = torch.tensor(
+                [
+                    [
+                        [cluster[0, 0], cluster[0, 1] - 1],
+                        [cluster[1, 0], cluster[0, 1] - 1],
+                    ],  # Up
+                    [
+                        [cluster[0, 0] - 1, cluster[0, 1]],
+                        [cluster[0, 0] - 1, cluster[1, 1]],
+                    ],  # Left
+                    [
+                        [cluster[1, 0] + 1, cluster[0, 1]],
+                        [cluster[1, 0] + 1, cluster[1, 1]],
+                    ],  # Right
+                    [
+                        [cluster[0, 0], cluster[1, 1] + 1],
+                        [cluster[1, 0], cluster[1, 1] + 1],
+                    ],  # Down
+                ]
+            ).cuda()
+            for i in range(4):
+                if expand[i]:
+                    expand[i] = is_has_feature(neighbors[i], graph)
+            if (~expand[0] & ~expand[2]) | (~expand[1] & ~expand[3]):
+                break
+            for i in range(4):
+                if expand[i]:
+                    cluster += offset[i]
+        clusters.append(cluster)
+        graph[cluster[0, 0] : cluster[1, 0] + 1, cluster[0, 1] : cluster[1, 1] + 1] = (
+            False
+        )
+        for i in range(4):
+            if expand[i]:
+                expand = torch.ones_like(expand)
+                expand[3 - i] = False
+                minx, miny, maxx, maxy = (
+                    neighbors[i, 0, 0],
+                    neighbors[i, 0, 1],
+                    neighbors[i, 1, 0],
+                    neighbors[i, 1, 1],
+                )
+                area = graph[minx : maxx + 1, miny : maxy + 1]
+                pos = torch.nonzero(area)
+                if pos.shape[0] > 0:
+                    cluster = torch.tensor(
+                        [
+                            [pos[0, 0] + minx, pos[0, 1] + miny],
+                            [pos[0, 0] + minx, pos[0, 1] + miny],
+                        ],
+                        dtype=int,
+                    ).cuda()
+                    break
+                else:
+                    pos = torch.nonzero(graph)
+                    cluster = torch.tensor(
+                        [
+                            [pos[0, 0] + minx, pos[0, 1] + miny],
+                            [pos[0, 0] + minx, pos[1, 0] + miny],
+                        ],
+                        dtype=int,
+                    ).cuda()
+                    expand[3 - i] = True
+                    break
+    centroids = torch.zeros([len(clusters), 2]).cuda()
+    for i, cluster in enumerate(clusters):
+        centroids[i] = cluster.float().mean(dim=0) * res
+    return centroids
 
 
 def point_to_surface(evalpts, points):
@@ -121,4 +200,4 @@ def accuracy_improvement(pts, surf1, surf2, max_iter=20, threshold=1e-3):
 
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
-    sequence_joining(uv1, surf1, 0.0)
+    pts = sequence_joining(uv1, surf1, 0.0)
