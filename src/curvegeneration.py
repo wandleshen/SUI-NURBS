@@ -72,12 +72,12 @@ def gen_grids(aabb, surf):
         dtype=bool,
     ).cuda()
     for grid in grids:
-        graph[grid[0, 0] : grid[1, 0] + 1, grid[0, 1] : grid[1, 1] + 1] = True
+        graph[grid[0, 0] : grid[1, 0], grid[0, 1] : grid[1, 1]] = True
     return grids[0], graph, res
 
 
-def is_has_feature(aabb, graph):
-    area = graph[aabb[0, 0] : aabb[1, 0] + 1, aabb[0, 1] : aabb[1, 1] + 1]
+def has_feature(aabb, graph):
+    area = graph[aabb[0, 0] : aabb[1, 0], aabb[0, 1] : aabb[1, 1]]
     return torch.any(area)
 
 
@@ -95,38 +95,34 @@ def sequence_joining(uv, surf, width):
                 [
                     [
                         [cluster[0, 0], cluster[0, 1] - 1],
-                        [cluster[1, 0], cluster[0, 1] - 1],
+                        [cluster[1, 0], cluster[0, 1]],
                     ],  # Up
                     [
                         [cluster[0, 0] - 1, cluster[0, 1]],
-                        [cluster[0, 0] - 1, cluster[1, 1]],
+                        [cluster[0, 0], cluster[1, 1]],
                     ],  # Left
                     [
-                        [cluster[1, 0] + 1, cluster[0, 1]],
+                        [cluster[1, 0], cluster[0, 1]],
                         [cluster[1, 0] + 1, cluster[1, 1]],
                     ],  # Right
                     [
-                        [cluster[0, 0], cluster[1, 1] + 1],
+                        [cluster[0, 0], cluster[1, 1]],
                         [cluster[1, 0], cluster[1, 1] + 1],
                     ],  # Down
                 ]
             ).cuda()
             for i in range(4):
                 if expand[i]:
-                    expand[i] = is_has_feature(neighbors[i], graph)
+                    expand[i] = has_feature(neighbors[i], graph)
             if (~expand[0] & ~expand[2]) | (~expand[1] & ~expand[3]):
                 break
             for i in range(4):
                 if expand[i]:
                     cluster += offset[i]
         clusters.append(cluster)
-        graph[cluster[0, 0] : cluster[1, 0] + 1, cluster[0, 1] : cluster[1, 1] + 1] = (
-            False
-        )
+        graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = False
         for i in range(4):
             if expand[i]:
-                expand = torch.ones_like(expand)
-                expand[3 - i] = False
                 minx, miny, maxx, maxy = (
                     neighbors[i, 0, 0],
                     neighbors[i, 0, 1],
@@ -135,30 +131,30 @@ def sequence_joining(uv, surf, width):
                 )
                 area = graph[minx : maxx + 1, miny : maxy + 1]
                 pos = torch.nonzero(area)
+                expand = torch.ones_like(expand)
                 if pos.shape[0] > 0:
                     cluster = torch.tensor(
                         [
                             [pos[0, 0] + minx, pos[0, 1] + miny],
-                            [pos[0, 0] + minx, pos[0, 1] + miny],
+                            [pos[0, 0] + minx + 1, pos[0, 1] + miny + 1],
                         ],
                         dtype=int,
                     ).cuda()
-                    break
+                    expand[3 - i] = False
                 else:
                     pos = torch.nonzero(graph)
                     cluster = torch.tensor(
                         [
                             [pos[0, 0] + minx, pos[0, 1] + miny],
-                            [pos[0, 0] + minx, pos[1, 0] + miny],
+                            [pos[0, 0] + minx + 1, pos[1, 0] + miny + 1],
                         ],
                         dtype=int,
                     ).cuda()
-                    expand[3 - i] = True
-                    break
-    centroids = torch.zeros([len(clusters), 2]).cuda()
+                break
+    centroids = torch.zeros([len(clusters), 2, 2]).cuda()
     for i, cluster in enumerate(clusters):
-        centroids[i] = cluster.float().mean(dim=0) * res
-    return centroids
+        centroids[i] = cluster.float() * res
+    return centroids, torch.mean(centroids, dim=1)
 
 
 def point_to_surface(evalpts, points):
@@ -193,11 +189,35 @@ def accuracy_improvement(pts, surf1, surf2, max_iter=20, threshold=1e-3):
         )
         x = torch.linalg.solve(A, b)
         pts[mask][mask2] = x
-        mask = (torch.norm(x - pts, dim=1)) > threshold
+        mask[mask.clone()][mask2] = (
+            torch.norm(x - pts[mask][mask2], dim=1)
+        ) > threshold
         max_iter -= 1
     return pts
 
 
+def find_closest_points_and_midpoint(pts1, pts2):
+    dists = torch.norm(
+        pts1.unsqueeze(0) - pts2.unsqueeze(1), dim=2
+    )  # [n, m] distance matrix
+    indices = torch.argmin(dists, dim=1)
+    closest_pts = pts2[indices]
+    midpoints = (pts1 + closest_pts) / 2
+    return midpoints
+
+
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
-    pts = sequence_joining(uv1, surf1, 0.0)
+    aabb1, pts1 = sequence_joining(uv1, surf1, 0.0)
+    aabb2, pts2 = sequence_joining(uv2, surf2, 0.0)
+    pts3d1 = torch.tensor(surf1.evaluate_list(pts1.cpu().tolist())).cuda()
+    pts3d2 = torch.tensor(surf2.evaluate_list(pts2.cpu().tolist())).cuda()
+    aabb3d1 = torch.tensor(
+        surf1.evaluate_list(aabb1.reshape(-1, 2).cpu().tolist())
+    ).reshape(-1, 2, 3)
+    aabb3d2 = torch.tensor(
+        surf2.evaluate_list(aabb2.reshape(-1, 2).cpu().tolist())
+    ).reshape(-1, 2, 3)
+    midpoints = find_closest_points_and_midpoint(pts3d1, pts3d2)
+    pts = accuracy_improvement(midpoints, surf1, surf2)
+    return aabb3d1, aabb3d2, pts

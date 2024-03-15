@@ -3,6 +3,7 @@ import glfw
 import torch
 import vtk
 import numpy as np
+from vtk.util import numpy_support
 from imgui.integrations.glfw import GlfwRenderer
 from geomdl import NURBS, knotvector
 
@@ -96,6 +97,43 @@ def draw_surf(surf, renderer, isGreen=True):
     return [polydata_actor]
 
 
+def draw_curve(curve, renderer):
+    curve = curve.cpu().numpy()
+
+    # Create a vtkPoints object and store the points in it
+    points = vtk.vtkPoints()
+    points.SetData(numpy_support.numpy_to_vtk(curve))
+
+    # Create a cell array to store the lines in and add the lines to it
+    lines = vtk.vtkCellArray()
+
+    for i in range(curve.shape[0] - 1):
+        line = vtk.vtkLine()
+        line.GetPointIds().SetId(0, i)
+        line.GetPointIds().SetId(1, i + 1)
+        lines.InsertNextCell(line)
+
+    # Create a polydata to store everything in
+    linesPolyData = vtk.vtkPolyData()
+
+    # Add the points to the dataset
+    linesPolyData.SetPoints(points)
+
+    # Add the lines to the dataset
+    linesPolyData.SetLines(lines)
+
+    # Setup actor and mapper
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputData(linesPolyData)
+
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+
+    # Add the actor to the renderer
+    renderer.AddActor(actor)
+    return [actor]
+
+
 def pan_camera(camera, right_amount, up_amount):
     # Get the current position, focal point and view up vector of the camera
     position = camera.GetPosition()
@@ -153,8 +191,9 @@ def render(
     surf2,
     extract1,
     extract2,
-    stripped1,
-    stripped2,
+    cluster1,
+    cluster2,
+    curve,
     window_name="SUI-NURBS",
     width=1280,
     height=720,
@@ -221,8 +260,8 @@ def render(
     glfw.set_scroll_callback(window, on_mouse_scroll)
     glfw.set_mouse_button_callback(window, on_mouse_button)
 
-    checkboxes = [False, False, True, True, False, False]
-    changes = [False, False, False, False, False, False]
+    checkboxes = [False, False, True, True, False, False, False]
+    changes = [False, False, False, False, False, False, False]
     actors_dict = {}
 
     actors_dict["surf1"] = draw_surf(surf1, renderer)
@@ -237,8 +276,9 @@ def render(
         changes[1], checkboxes[1] = imgui.checkbox("AABB2", checkboxes[1])
         changes[2], checkboxes[2] = imgui.checkbox("Surface1", checkboxes[2])
         changes[3], checkboxes[3] = imgui.checkbox("Surface2", checkboxes[3])
-        changes[4], checkboxes[4] = imgui.checkbox("Stripped AABB1", checkboxes[4])
-        changes[5], checkboxes[5] = imgui.checkbox("Stripped AABB2", checkboxes[5])
+        changes[4], checkboxes[4] = imgui.checkbox("Cluster1", checkboxes[4])
+        changes[5], checkboxes[5] = imgui.checkbox("Cluster2", checkboxes[5])
+        changes[6], checkboxes[6] = imgui.checkbox("Curve", checkboxes[6])
 
         imgui.end()
         imgui.render()
@@ -286,28 +326,38 @@ def render(
             surf2,
             isGreen=False,
         )
-        # handle_changes(
-        #     4,
-        #     "stripped1",
-        #     draw_aabb,
-        #     renderer,
-        #     actors_dict,
-        #     changes,
-        #     checkboxes,
-        #     stripped1,
-        #     isRed=False,
-        # )
-        # handle_changes(
-        #     5,
-        #     "stripped2",
-        #     draw_aabb,
-        #     renderer,
-        #     actors_dict,
-        #     changes,
-        #     checkboxes,
-        #     stripped2,
-        #     isRed=False,
-        # )
+        handle_changes(
+            4,
+            "cluster1",
+            draw_aabb,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            cluster1,
+            isRed=False,
+        )
+        handle_changes(
+            5,
+            "cluster2",
+            draw_aabb,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            cluster2,
+            isRed=False,
+        )
+        handle_changes(
+            6,
+            "curve",
+            draw_curve,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            curve,
+        )
 
         impl.render(imgui.get_draw_data())
         glfw.swap_buffers(window)

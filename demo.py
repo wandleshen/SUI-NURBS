@@ -291,8 +291,8 @@ pts2, u2 ,v2 = gen_aabb(
 )
 
 col, col2 = region_extraction(pts, pts2)
-gen_curves(u1, v1, col, surf, u2, v2, col2, surf2)
+cluster, cluster2, curve = gen_curves(u1, v1, col, surf, u2, v2, col2, surf2)
 extract, pts = utils.extract_aabb(pts, col)
 extract2, pts2 = utils.extract_aabb(pts2, col2)
 
-utils.render(pts, pts2, surf, surf2, extract, extract2, None, None)
+utils.render(pts, pts2, surf, surf2, extract, extract2, cluster, cluster2, curve)
