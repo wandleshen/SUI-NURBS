@@ -106,27 +106,20 @@ def draw_curve(curve, renderer):
     points = vtk.vtkPoints()
     points.SetData(numpy_support.numpy_to_vtk(curve))
 
-    # Create a cell array to store the lines in and add the lines to it
-    lines = vtk.vtkCellArray()
-
-    for i in range(curve.shape[0] - 1):
-        line = vtk.vtkLine()
-        line.GetPointIds().SetId(0, i)
-        line.GetPointIds().SetId(1, i + 1)
-        lines.InsertNextCell(line)
-
     # Create a polydata to store everything in
-    linesPolyData = vtk.vtkPolyData()
+    polydata = vtk.vtkPolyData()
 
-    # Add the points to the dataset
-    linesPolyData.SetPoints(points)
+    spline = vtk.vtkParametricSpline()
+    spline.SetPoints(points)
 
-    # Add the lines to the dataset
-    linesPolyData.SetLines(lines)
+    function_source = vtk.vtkParametricFunctionSource()
+    function_source.SetParametricFunction(spline)
+    function_source.SetUResolution(100 * polydata.GetNumberOfPoints())
+    function_source.Update()
 
     # Setup actor and mapper
     mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputData(linesPolyData)
+    mapper.SetInputConnection(function_source.GetOutputPort())
 
     actor = vtk.vtkActor()
     actor.SetMapper(mapper)
