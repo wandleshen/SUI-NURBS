@@ -280,7 +280,7 @@ pts, u1, v1 = gen_aabb(
 
 surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), 100)
 
-pts2, u2 ,v2 = gen_aabb(
+pts2, u2, v2 = gen_aabb(
     torch.tensor(surf2.knotvector_u).cuda(),
     torch.tensor(surf2.knotvector_v).cuda(),
     torch.tensor(surf2.ctrlpts2d).cuda(),
@@ -291,8 +291,22 @@ pts2, u2 ,v2 = gen_aabb(
 )
 
 col, col2 = region_extraction(pts, pts2)
-cluster, cluster2, curve = gen_curves(u1, v1, col, surf, u2, v2, col2, surf2)
+stripped, stripped2, cluster, cluster2, curve = gen_curves(
+    u1, v1, col, surf, u2, v2, col2, surf2
+)
 extract, pts = utils.extract_aabb(pts, col)
 extract2, pts2 = utils.extract_aabb(pts2, col2)
 
-utils.render(pts, pts2, surf, surf2, extract, extract2, cluster, cluster2, curve)
+utils.render(
+    pts,
+    pts2,
+    surf,
+    surf2,
+    extract,
+    extract2,
+    stripped,
+    stripped2,
+    cluster,
+    cluster2,
+    curve,
+)

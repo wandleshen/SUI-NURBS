@@ -44,7 +44,7 @@ def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2):
     max_aabb1, min_aabb1 = aabb1_expanded[:, :, 1], aabb1_expanded[:, :, 0]
     max_aabb2, min_aabb2 = aabb2_expanded[:, :, 1], aabb2_expanded[:, :, 0]
 
-    overlaps = (min_aabb1 <= max_aabb2) & (min_aabb2 <= max_aabb1)
+    overlaps = (min_aabb1 <= max_aabb2) & (max_aabb1 >= min_aabb2)
     overlaps = overlaps.all(dim=-1)
 
     indices = torch.nonzero(overlaps)
@@ -73,16 +73,33 @@ def gen_grids(aabb, surf):
     ).cuda()
     for grid in grids:
         graph[grid[0, 0] : grid[1, 0], grid[0, 1] : grid[1, 1]] = True
-    return grids[0], graph, res
+    return graph, res
 
 
 def has_feature(aabb, graph):
-    area = graph[aabb[0, 0] : aabb[1, 0], aabb[0, 1] : aabb[1, 1]]
-    return torch.any(area)
+    # 判断 aabb 是否在 graph 的范围内
+    if (
+        aabb[0, 0] < 0
+        or aabb[0, 1] < 0
+        or aabb[1, 0] > graph.shape[0]
+        or aabb[1, 1] > graph.shape[1]
+    ):
+        return False
+    else:
+        area = graph[aabb[0, 0] : aabb[1, 0], aabb[0, 1] : aabb[1, 1]]
+        return torch.any(area)
 
 
-def sequence_joining(uv, surf, width):
-    cluster, graph, res = gen_grids(uv, surf)
+def sequence_joining(uv, surf):
+    graph, res = gen_grids(uv, surf)
+    pos = torch.nonzero(graph)
+    cluster = torch.tensor(
+        [
+            [pos[0, 0], pos[0, 1]],
+            [pos[0, 0] + 1, pos[0, 1] + 1],
+        ],
+        dtype=int,
+    ).cuda()
     clusters = []
     expand = torch.tensor([True, True, True, True]).cuda()  # Up, Left, Right, Down
     neighbors = None
@@ -114,7 +131,7 @@ def sequence_joining(uv, surf, width):
             for i in range(4):
                 if expand[i]:
                     expand[i] = has_feature(neighbors[i], graph)
-            if (~expand[0] & ~expand[2]) | (~expand[1] & ~expand[3]):
+            if (~expand[0] & ~expand[3]) | (~expand[1] & ~expand[2]):
                 break
             for i in range(4):
                 if expand[i]:
@@ -129,14 +146,16 @@ def sequence_joining(uv, surf, width):
                     neighbors[i, 1, 0],
                     neighbors[i, 1, 1],
                 )
-                area = graph[minx : maxx + 1, miny : maxy + 1]
+                area = graph[minx:maxx, miny:maxy]
                 pos = torch.nonzero(area)
                 expand = torch.ones_like(expand)
                 if pos.shape[0] > 0:
+                    # Choose midpoint in pos instead of the first point
+                    midpos = pos[pos.shape[0] // 2]
                     cluster = torch.tensor(
                         [
-                            [pos[0, 0] + minx, pos[0, 1] + miny],
-                            [pos[0, 0] + minx + 1, pos[0, 1] + miny + 1],
+                            [midpos[0] + minx, midpos[1] + miny],
+                            [midpos[0] + minx + 1, midpos[1] + miny + 1],
                         ],
                         dtype=int,
                     ).cuda()
@@ -164,7 +183,7 @@ def point_to_surface(evalpts, points):
     return evalpts[indices]
 
 
-def accuracy_improvement(pts, surf1, surf2, max_iter=20, threshold=1e-3):
+def accuracy_improvement(pts, surf1, surf2, max_iter=40, threshold=1e-6):
     mask = torch.ones(pts.shape[0], dtype=bool).cuda()
     evalpts1 = torch.tensor(surf1.evalpts).cuda()
     evalpts2 = torch.tensor(surf2.evalpts).cuda()
@@ -208,16 +227,24 @@ def find_closest_points_and_midpoint(pts1, pts2):
 
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
-    aabb1, pts1 = sequence_joining(uv1, surf1, 0.0)
-    aabb2, pts2 = sequence_joining(uv2, surf2, 0.0)
+    aabb1, pts1 = sequence_joining(uv1, surf1)
+    aabb2, pts2 = sequence_joining(uv2, surf2)
     pts3d1 = torch.tensor(surf1.evaluate_list(pts1.cpu().tolist())).cuda()
     pts3d2 = torch.tensor(surf2.evaluate_list(pts2.cpu().tolist())).cuda()
+    midpoints = find_closest_points_and_midpoint(pts3d1, pts3d2)
+    pts = accuracy_improvement(midpoints, surf1, surf2)
+
+    # Gen imgui AABBs
+    uv3d1 = torch.tensor(
+        surf1.evaluate_list(uv1.reshape(-1, 2).cpu().tolist())
+    ).reshape(-1, 2, 3)
+    uv3d2 = torch.tensor(
+        surf2.evaluate_list(uv2.reshape(-1, 2).cpu().tolist())
+    ).reshape(-1, 2, 3)
     aabb3d1 = torch.tensor(
         surf1.evaluate_list(aabb1.reshape(-1, 2).cpu().tolist())
     ).reshape(-1, 2, 3)
     aabb3d2 = torch.tensor(
         surf2.evaluate_list(aabb2.reshape(-1, 2).cpu().tolist())
     ).reshape(-1, 2, 3)
-    midpoints = find_closest_points_and_midpoint(pts3d1, pts3d2)
-    pts = accuracy_improvement(midpoints, surf1, surf2)
-    return aabb3d1, aabb3d2, pts
+    return uv3d1, uv3d2, aabb3d1, aabb3d2, pts
