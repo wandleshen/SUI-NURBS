@@ -255,8 +255,8 @@ ctrlpts = np.array(
     ]
 )
 
-M = 80
-N = 80
+M = 85
+N = 85
 
 ctrlpts4d = np.concatenate(
     (ctrlpts, np.ones((ctrlpts.shape[0], ctrlpts.shape[1], 1), dtype=float)), axis=-1

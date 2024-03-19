@@ -69,10 +69,10 @@ def gen_grids(aabb, surf):
             math.ceil(max(surf.knotvector_u) // res[0]),
             math.ceil(max(surf.knotvector_v) // res[1]),
         ],
-        dtype=bool,
+        dtype=int,
     ).cuda()
     for grid in grids:
-        graph[grid[0, 0] : grid[1, 0], grid[0, 1] : grid[1, 1]] = True
+        graph[grid[0, 0] : grid[1, 0], grid[0, 1] : grid[1, 1]] = 1
     return graph, res
 
 
@@ -87,7 +87,7 @@ def has_feature(aabb, graph):
         return False
     else:
         area = graph[aabb[0, 0] : aabb[1, 0], aabb[0, 1] : aabb[1, 1]]
-        return torch.any(area)
+        return torch.any(area > 0)
 
 
 def bound_reduce(aabb, graph, offset):
@@ -122,6 +122,112 @@ def bound_reduce(aabb, graph, offset):
     return aabb
 
 
+def expand_cluster(cluster, graph, width, offset):
+    expand = torch.ones(4, dtype=bool).cuda()
+    while True:
+        neighbors = torch.tensor(
+            [
+                [
+                    [cluster[0, 0], cluster[0, 1] - 1],
+                    [cluster[1, 0], cluster[0, 1]],
+                ],  # Up
+                [
+                    [cluster[0, 0] - 1, cluster[0, 1]],
+                    [cluster[0, 0], cluster[1, 1]],
+                ],  # Left
+                [
+                    [cluster[1, 0], cluster[0, 1]],
+                    [cluster[1, 0] + 1, cluster[1, 1]],
+                ],  # Right
+                [
+                    [cluster[0, 0], cluster[1, 1]],
+                    [cluster[1, 0], cluster[1, 1] + 1],
+                ],  # Down
+            ]
+        ).cuda()
+        for i in range(4):
+            if expand[i]:
+                expand[i] = has_feature(neighbors[i], graph)
+        if (~expand[0] & ~expand[3]) | (~expand[1] & ~expand[2]):
+            break
+        for i in range(4):
+            if expand[i]:
+                cluster += offset[i]
+        lens = cluster[1] - cluster[0]
+        if width > 0.0 and torch.any(lens > width):
+            break
+    return cluster, expand
+
+
+def gen_new_cluster(cluster, graph, offset):
+    lens = cluster[1] - cluster[0]
+    # Get optimal neighbor subgrid
+    neighbor_subgrids = torch.tensor(
+        [
+            [
+                [cluster[0, 0], cluster[0, 1] - lens[1]],
+                [cluster[1, 0], cluster[0, 1]],
+            ],
+            [
+                [cluster[0, 0] - lens[0], cluster[0, 1]],
+                [cluster[0, 0], cluster[1, 1]],
+            ],
+            [
+                [cluster[1, 0], cluster[0, 1]],
+                [cluster[1, 0] + lens[0], cluster[1, 1]],
+            ],
+            [
+                [cluster[0, 0], cluster[1, 1]],
+                [cluster[1, 0], cluster[1, 1] + lens[1]],
+            ],
+        ]
+    ).cuda()
+    neighbor_subgrids[..., 0] = neighbor_subgrids[..., 0].clamp(0, graph.shape[0])
+    neighbor_subgrids[..., 1] = neighbor_subgrids[..., 1].clamp(0, graph.shape[1])
+    feature_counts = torch.zeros(4, dtype=int).cuda()
+    for i in range(4):
+        area = graph[
+            neighbor_subgrids[i, 0, 0] : neighbor_subgrids[i, 1, 0],
+            neighbor_subgrids[i, 0, 1] : neighbor_subgrids[i, 1, 1],
+        ]
+        feature_counts[i] = torch.sum(area > 0)
+    index = torch.argmax(feature_counts)
+    target_neighbor = neighbor_subgrids[index]
+    cluster = bound_reduce(target_neighbor, graph, offset)
+    new_lens = cluster[1] - cluster[0]
+    half_lens = new_lens // 2
+    quarter_lens = new_lens // 4
+    if index == 1 or index == 2:
+        cluster -= half_lens[0] * offset[index] + quarter_lens[1] * (
+            offset[0] + offset[3]
+        )
+    else:
+        cluster -= half_lens[1] * offset[index] + quarter_lens[0] * (
+            offset[1] + offset[2]
+        )
+    return cluster
+
+
+def adjust_first_two_clusters(clusters, graph, offset):
+    if len(clusters) < 4:
+        return clusters
+    graph = torch.abs(graph)
+    new_cluster = gen_new_cluster(clusters[2], graph, offset)
+    width = torch.norm(
+        clusters[3].mean(dim=1, dtype=float) - clusters[2].mean(dim=1, dtype=float)
+    )
+    clusters[1], _ = expand_cluster(new_cluster, graph, width, offset)
+    graph[
+        clusters[1][0, 0] : clusters[1][1, 0], clusters[1][0, 1] : clusters[1][1, 1]
+    ] = 0
+    new_cluster = gen_new_cluster(clusters[1], graph, offset)
+    width = torch.norm(
+        clusters[2].mean(dim=1, dtype=float) - clusters[1].mean(dim=1, dtype=float)
+    )
+    clusters[0], _ = expand_cluster(new_cluster, graph, width, offset)
+    return clusters
+
+
 def sequence_joining(uv, surf):
     graph, res = gen_grids(uv, surf)
     pos = torch.nonzero(graph)
@@ -134,118 +240,43 @@ def sequence_joining(uv, surf):
         dtype=int,
     ).cuda()
     clusters = []
-    expand = torch.tensor([True, True, True, True]).cuda()  # Up, Left, Right, Down
-    neighbors = None
     offset = torch.tensor(
         [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]]
     ).cuda()
-    width = -1.
-    lens = torch.tensor([[]])
-    while torch.any(graph):
-        while True:
-            neighbors = torch.tensor(
-                [
-                    [
-                        [cluster[0, 0], cluster[0, 1] - 1],
-                        [cluster[1, 0], cluster[0, 1]],
-                    ],  # Up
-                    [
-                        [cluster[0, 0] - 1, cluster[0, 1]],
-                        [cluster[0, 0], cluster[1, 1]],
-                    ],  # Left
-                    [
-                        [cluster[1, 0], cluster[0, 1]],
-                        [cluster[1, 0] + 1, cluster[1, 1]],
-                    ],  # Right
-                    [
-                        [cluster[0, 0], cluster[1, 1]],
-                        [cluster[1, 0], cluster[1, 1] + 1],
-                    ],  # Down
-                ]
-            ).cuda()
-            for i in range(4):
-                if expand[i]:
-                    expand[i] = has_feature(neighbors[i], graph)
-            if (~expand[0] & ~expand[3]) | (~expand[1] & ~expand[2]):
-                break
-            for i in range(4):
-                if expand[i]:
-                    cluster += offset[i]
-            lens = cluster[1] - cluster[0]
-            # if width > 0. and torch.any(lens > width):
-            #     break
+    width = -1.0
+    count = 0
+    while True:
+        if count == 2:
+            width = torch.norm(
+                clusters[-1].mean(dim=1, dtype=float)
+                - clusters[-2].mean(dim=1, dtype=float)
+            )
+        cluster, expand = expand_cluster(cluster, graph, width, offset)
         clusters.append(cluster)
-        graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = False
-        flag = False
+        if count < 2:
+            count += 1
+            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = -1
+        else:
+            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = 0
         if torch.any(expand):
-            center = torch.mean(cluster, dim=0, dtype=float)
-            # Get optimal neighbor subgrid
-            neighbor_subgrids = torch.tensor(
-                [
-                    [
-                        [cluster[0, 0], cluster[0, 1] - lens[1]],
-                        [cluster[1, 0], cluster[0, 1]],
-                    ],
-                    [
-                        [cluster[0, 0] - lens[0], cluster[0, 1]],
-                        [cluster[0, 0], cluster[1, 1]],
-                    ],
-                    [
-                        [cluster[1, 0], cluster[0, 1]],
-                        [cluster[1, 0] + lens[0], cluster[1, 1]],
-                    ],
-                    [
-                        [cluster[0, 0], cluster[1, 1]],
-                        [cluster[1, 0], cluster[1, 1] + lens[1]],
-                    ],
-                ]
-            ).cuda()
-            neighbor_subgrids[..., 0] = neighbor_subgrids[..., 0].clamp(0, graph.shape[0])
-            neighbor_subgrids[..., 1] = neighbor_subgrids[..., 1].clamp(0, graph.shape[1])
-            feature_counts = torch.zeros(4, dtype=int).cuda()
-            for i in range(4):
-                area = graph[
-                    neighbor_subgrids[i, 0, 0] : neighbor_subgrids[i, 1, 0],
-                    neighbor_subgrids[i, 0, 1] : neighbor_subgrids[i, 1, 1],
-                ]
-                feature_counts[i] = torch.sum(area)
-            index = torch.argmax(feature_counts)
-            target_neighbor = neighbor_subgrids[index]
-            cluster = bound_reduce(target_neighbor, graph, offset)
-            new_lens = cluster[1] - cluster[0]
-            half_lens = new_lens // 2
-            quarter_lens = new_lens // 4
-            if index == 1 or index == 2:
-                cluster -= half_lens[0] * offset[index] + quarter_lens[1] * (
-                    offset[0] + offset[3]
-                )
-            else:
-                cluster -= half_lens[1] * offset[index] + quarter_lens[0] * (
-                    offset[1] + offset[2]
-                )
-            width = torch.norm(cluster.mean(dim=0, dtype=float) - center)
-        else:  # No any valid neighbors
-            # Select a random first place
-            # pos = torch.nonzero(graph)
-            # if len(pos) == 0:
-            #     break
-            # cluster = torch.tensor(
-            #     [
-            #         [pos[0, 0], pos[0, 1]],
-            #         [pos[0, 0] + 1, pos[0, 1] + 1],
-            #     ],
-            #     dtype=int,
-            # ).cuda()
-            # width = -1.
-            flag = True
-
-        if flag:
+            cluster = gen_new_cluster(cluster, graph, offset)
+        else:
             break
-        expand = torch.ones_like(expand)
 
-    centroids = torch.zeros([len(clusters), 2, 2]).cuda()
+    # clusters = adjust_first_two_clusters(clusters, graph, offset)
+
+    centroids = torch.zeros([len(clusters) + 1, 2, 2]).cuda()
+    centroids[0] = (
+        torch.tensor(
+            [
+                [clusters[0][0, 0], clusters[0][0, 1]],
+                [clusters[0][0, 0], clusters[0][0, 1]],
+            ]
+        ).cuda()
+        * res
+    )
     for i, cluster in enumerate(clusters):
-        centroids[i] = cluster.float() * res
+        centroids[i + 1] = cluster.float() * res
     return centroids, torch.mean(centroids, dim=1)
 
 
