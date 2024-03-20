@@ -212,19 +212,39 @@ def adjust_first_two_clusters(clusters, graph, offset):
     if len(clusters) < 4:
         return clusters
     graph = torch.abs(graph)
+
+    def process_cluster(clusters, index, graph, offset):
+        width = torch.norm(
+            clusters[index + 2].mean(dim=1, dtype=float)
+            - clusters[index + 1].mean(dim=1, dtype=float)
+        )
+        clusters[index], _ = expand_cluster(new_cluster, graph, width, offset)
+        graph[
+            clusters[index][0, 0] : clusters[index][1, 0],
+            clusters[index][0, 1] : clusters[index][1, 1],
+        ] = 0
+        return clusters, graph
+
     new_cluster = gen_new_cluster(clusters[2], graph, offset)
-    width = torch.norm(
-        clusters[3].mean(dim=1, dtype=float) - clusters[2].mean(dim=1, dtype=float)
-    )
-    clusters[1], _ = expand_cluster(new_cluster, graph, width, offset)
-    graph[
-        clusters[1][0, 0] : clusters[1][1, 0], clusters[1][0, 1] : clusters[1][1, 1]
-    ] = 0
+    clusters, graph = process_cluster(clusters, 1, graph, offset)
     new_cluster = gen_new_cluster(clusters[1], graph, offset)
-    width = torch.norm(
-        clusters[2].mean(dim=1, dtype=float) - clusters[1].mean(dim=1, dtype=float)
-    )
-    clusters[0], _ = expand_cluster(new_cluster, graph, width, offset)
+    clusters, graph = process_cluster(clusters, 0, graph, offset)
+
+    # Gen new clusters inversely
+    if torch.any(graph > 0):
+        cluster = gen_new_cluster(clusters[0], graph, offset)
+        while True:
+            width = torch.norm(
+                clusters[0].mean(dim=1, dtype=float)
+                - clusters[1].mean(dim=1, dtype=float)
+            )
+            cluster, expand = expand_cluster(cluster, graph, width, offset)
+            clusters.insert(0, cluster)
+            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = 0
+            if torch.any(expand):
+                cluster = gen_new_cluster(cluster, graph, offset)
+            else:
+                break
     return clusters
 
 
