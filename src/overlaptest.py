@@ -99,7 +99,7 @@ def decompose_aabb(aabb1, aabb2, kl, orig_indices):
     pad2, k, l = pad_and_split(aabb2, kl[2], kl[3])  # [k2, l2, m/k2, n/l2, 2, 3]
 
     overlaps = overlap_test(pad1, pad2)  # [k1, l1, k2, l2]
-    length = torch.tensor([i, j, k, l]).cuda()
+    length = torch.tensor([i, j, k, l], device=torch.device("cuda"))
     indices = torch.nonzero(overlaps) * length + orig_indices
     return torch.stack([indices, indices + length], dim=-1)
 
@@ -119,12 +119,19 @@ def region_extraction(aabb1, aabb2, d=4):
     """
     mn = torch.ceil(
         torch.log2(
-            torch.cat([torch.tensor(aabb1.shape[:2]), torch.tensor(aabb2.shape[:2])])
+            torch.cat(
+                [
+                    torch.tensor(aabb1.shape[:2], device=torch.device("cuda")),
+                    torch.tensor(aabb2.shape[:2], device=torch.device("cuda")),
+                ]
+            )
         )
-    ).cuda()
+    )
     kl = torch.where(mn % d != 0, mn % d, d)
     mn -= kl
-    Rols = decompose_aabb(aabb1, aabb2, 2**kl, torch.tensor([0, 0, 0, 0]).cuda())
+    Rols = decompose_aabb(
+        aabb1, aabb2, 2**kl, torch.tensor([0, 0, 0, 0], device=torch.device("cuda"))
+    )
     while torch.sum(mn) > 0:
         kl = torch.clamp_max(mn, d)
         mn -= kl

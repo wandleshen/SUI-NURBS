@@ -268,22 +268,33 @@ ctrlpts4d_rev = ctrlpts4d[..., [1, 0, 2, 3]]
 
 surf = utils.gen_surface(ctrlpts4d.tolist(), 100)
 
-pts, u1, v1 = gen_aabb(
-    torch.tensor(surf.knotvector_u).cuda(),
-    torch.tensor(surf.knotvector_v).cuda(),
-    torch.tensor(surf.ctrlpts2d).cuda(),
+surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), 100)
+
+# Warm-up
+_, _, _ = gen_aabb(
+    torch.tensor(surf.knotvector_u, device=torch.device("cuda")),
+    torch.tensor(surf.knotvector_v, device=torch.device("cuda")),
+    torch.tensor(surf.ctrlpts2d, device=torch.device("cuda")),
     M,
     N,
     3,
     3,
 )
 
-surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), 100)
+pts, u1, v1 = gen_aabb(
+    torch.tensor(surf.knotvector_u, device=torch.device("cuda")),
+    torch.tensor(surf.knotvector_v, device=torch.device("cuda")),
+    torch.tensor(surf.ctrlpts2d, device=torch.device("cuda")),
+    M,
+    N,
+    3,
+    3,
+)
 
 pts2, u2, v2 = gen_aabb(
-    torch.tensor(surf2.knotvector_u).cuda(),
-    torch.tensor(surf2.knotvector_v).cuda(),
-    torch.tensor(surf2.ctrlpts2d).cuda(),
+    torch.tensor(surf2.knotvector_u, device=torch.device("cuda")),
+    torch.tensor(surf2.knotvector_v, device=torch.device("cuda")),
+    torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda")),
     M,
     N,
     3,

@@ -59,7 +59,7 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     )  # [m, n, 3, 3]
 
     # Calculate AABB
-    aabb = torch.zeros([m, n, 2, 3]).cuda()
+    aabb = torch.zeros([m, n, 2, 3], device=torch.device("cuda"))
     aabb[..., 0, :] = NiNjP[..., 0] - torch.abs(NiNjP[..., 1:3]).sum(dim=-1)
     aabb[..., 1, :] = NiNjP[..., 0] + torch.abs(NiNjP[..., 1:3]).sum(dim=-1)
     return aabb, u, v
@@ -94,7 +94,7 @@ def gen_intervals(knotvector, n, p, eps=0.01):
         split = n - n_intervals
         div = split // n_intervals
         mod = split % n_intervals
-        splits = torch.ones(n_intervals, dtype=torch.int32).cuda()
+        splits = torch.ones(n_intervals, dtype=torch.int32, device=torch.device("cuda"))
         splits += div
         _, indices = torch.topk(intervals, mod)
         splits[indices] += 1
@@ -103,15 +103,17 @@ def gen_intervals(knotvector, n, p, eps=0.01):
         splits = torch.repeat_interleave(splits, splits)
         intervals /= splits
     # Generate the cumulative intervals
-    cumsum = torch.zeros(intervals.shape[0] + 1, dtype=torch.float32).cuda()
+    cumsum = torch.zeros(
+        intervals.shape[0] + 1, dtype=torch.float32, device=torch.device("cuda")
+    )
     cumsum[1:] = torch.cumsum(intervals, dim=0)
     cumsum[0] -= eps
     cumsum[-1] += eps
     orig = torch.stack((cumsum[:-1], cumsum[1:]), dim=1)
     # Generate all `i`s and `u`s for N_{i,p}
-    range_t = torch.arange(-p, 1, 1).cuda()
+    range_t = torch.arange(-p, 1, 1, device=torch.device("cuda"))
     i = i[:, None] + range_t[None, :]
-    u = torch.zeros_like(orig, dtype=torch.float32).cuda()
+    u = torch.zeros_like(orig, dtype=torch.float32, device=torch.device("cuda"))
     u[:, 0] = (orig[:, 1] + orig[:, 0]) / 2.0
     u[:, 1] = (orig[:, 1] - orig[:, 0]) / 2.0
     return u, i
@@ -132,15 +134,15 @@ def basic_func(u, p, i, knotvector):
     """
     n = u.shape[0]
     m = i.shape[1]
-    N = torch.zeros([n, m, 3], dtype=torch.float32).cuda()
+    N = torch.zeros([n, m, 3], dtype=torch.float32, device=torch.device("cuda"))
     if p == 0:
         mask = (knotvector[i] <= u[:, None, 0]) & (u[:, None, 0] < knotvector[i + 1])
         N[..., 0] = torch.where(
             mask, torch.ones_like(N[..., 0]), torch.zeros_like(N[..., 0])
         )
         return N
-    a = torch.zeros([n, m, 3], dtype=torch.float32).cuda()
-    b = torch.zeros([n, m, 3], dtype=torch.float32).cuda()
+    a = torch.zeros([n, m, 3], dtype=torch.float32, device=torch.device("cuda"))
+    b = torch.zeros([n, m, 3], dtype=torch.float32, device=torch.device("cuda"))
     # Cal the first part of N_{i,p}
     divisor_ip = knotvector[i + p] - knotvector[i]
     mask = torch.abs(divisor_ip) > 1e-6
@@ -179,7 +181,7 @@ def aa_times(lhs, rhs, is3x3=False):
     Returns:
     res (torch.Tensor): The result of the affine arithmetic operation
     """
-    res = torch.zeros_like(lhs).cuda()
+    res = torch.zeros_like(lhs, device=torch.device("cuda"))
     # abs_lhs = torch.abs(lhs)
     # abs_rhs = torch.abs(rhs)
     res[..., 0] = lhs[..., 0] * rhs[..., 0]
