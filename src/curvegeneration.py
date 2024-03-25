@@ -21,11 +21,9 @@ def cartesian_product_rowwise(tensor_a, tensor_b):
 
 def cal_min_aabbs(u, v, col, surf):
     pts = cartesian_product_rowwise(u[col[:, 0]], v[col[:, 1]])
-    pts = (
-        torch.tensor(surf.evaluate_list(pts.reshape(-1, 2).tolist()))
-        .reshape(-1, 4, 3)
-        .cuda()
-    )
+    pts = torch.tensor(
+        surf.evaluate_list(pts.reshape(-1, 2).tolist()), device=torch.device("cuda")
+    ).reshape(-1, 4, 3)
     min_vals, _ = torch.min(pts, dim=1, keepdim=True)
     max_vals, _ = torch.max(pts, dim=1, keepdim=True)
 
@@ -71,7 +69,7 @@ def gen_grids(aabb, surf):
             math.ceil(max(surf.knotvector_u) // res[0]),
             math.ceil(max(surf.knotvector_v) // res[1]),
         ],
-        dtype=int,
+        dtype=torch.int8,
         device=torch.device("cuda"),
     )
     for grid in grids:
@@ -256,57 +254,63 @@ def adjust_first_two_clusters(clusters, graph, offset):
 
 def sequence_joining(uv, surf):
     graph, res = gen_grids(uv, surf)
-    pos = torch.nonzero(graph)
-    # Initial cluster
-    cluster = torch.tensor(
-        [
-            [pos[0, 0], pos[0, 1]],
-            [pos[0, 0] + 1, pos[0, 1] + 1],
-        ],
-        dtype=int,
-        device=torch.device("cuda"),
-    )
-    clusters = []
-    offset = torch.tensor(
-        [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]],
-        device=torch.device("cuda"),
-    )
-    width = -1.0
-    count = 0
-    while True:
-        if count == 2:
-            width = torch.norm(
-                clusters[-1].mean(dim=1, dtype=float)
-                - clusters[-2].mean(dim=1, dtype=float)
-            )
-        cluster, expand = expand_cluster(cluster, graph, width, offset)
-        clusters.append(cluster)
-        if count < 2:
-            count += 1
-            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = -1
-        else:
-            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = 0
-        if torch.any(expand):
-            cluster = gen_new_cluster(cluster, graph, offset)
-        else:
-            break
-
-    # clusters = adjust_first_two_clusters(clusters, graph, offset)
-
-    centroids = torch.zeros([len(clusters) + 1, 2, 2], device=torch.device("cuda"))
-    centroids[0] = (
-        torch.tensor(
+    all_centroids = []
+    all_means = []
+    while torch.any(graph > 0):
+        clusters = []
+        pos = torch.nonzero(graph)
+        # Initial cluster
+        cluster = torch.tensor(
             [
-                [clusters[0][0, 0], clusters[0][0, 1]],
-                [clusters[0][0, 0], clusters[0][0, 1]],
+                [pos[0, 0], pos[0, 1]],
+                [pos[0, 0] + 1, pos[0, 1] + 1],
             ],
+            dtype=int,
             device=torch.device("cuda"),
         )
-        * res
-    )
-    for i, cluster in enumerate(clusters):
-        centroids[i + 1] = cluster.float() * res
-    return centroids, torch.mean(centroids, dim=1)
+        offset = torch.tensor(
+            [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]],
+            device=torch.device("cuda"),
+        )
+        width = -1.0
+        count = 0
+        while True:
+            if count == 2:
+                width = torch.norm(
+                    clusters[-1].mean(dim=1, dtype=float)
+                    - clusters[-2].mean(dim=1, dtype=float)
+                )
+            cluster, expand = expand_cluster(cluster, graph, width, offset)
+            clusters.append(cluster)
+            if count < 2:
+                count += 1
+                graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = -1
+            else:
+                graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = 0
+            if torch.any(expand):
+                cluster = gen_new_cluster(cluster, graph, offset)
+            else:
+                break
+
+        # clusters = adjust_first_two_clusters(clusters, graph, offset)
+
+        centroids = torch.zeros([len(clusters) + 1, 2, 2], device=torch.device("cuda"))
+        centroids[0] = (
+            torch.tensor(
+                [
+                    [clusters[0][0, 0], clusters[0][0, 1]],
+                    [clusters[0][0, 0], clusters[0][0, 1]],
+                ],
+                device=torch.device("cuda"),
+            )
+            * res
+        )
+        for i, cluster in enumerate(clusters):
+            centroids[i + 1] = cluster.float() * res
+
+        all_centroids.append(centroids)
+        all_means.append(torch.mean(centroids, dim=1))
+    return all_centroids, all_means
 
 
 def point_to_surface(evalpts, points):
@@ -316,10 +320,8 @@ def point_to_surface(evalpts, points):
     return evalpts[indices]
 
 
-def accuracy_improvement(pts, surf1, surf2, max_iter=20, threshold=1e-3):
+def accuracy_improvement(pts, evalpts1, evalpts2, max_iter=20, threshold=1e-3):
     mask = torch.ones(pts.shape[0], dtype=bool, device=torch.device("cuda"))
-    evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
-    evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
     while torch.any(mask) and max_iter > 0:
         d1 = point_to_surface(evalpts1, pts[mask])
         d2 = point_to_surface(evalpts2, pts[mask])
@@ -348,28 +350,32 @@ def accuracy_improvement(pts, surf1, surf2, max_iter=20, threshold=1e-3):
     return pts
 
 
-def find_closest_points_and_midpoint(pts1, pts2):
+def find_closest_points(pts1, pts2):
     dists = torch.norm(
-        pts1.unsqueeze(0) - pts2.unsqueeze(1), dim=2
+        pts1.unsqueeze(1) - pts2.unsqueeze(0), dim=2
     )  # [n, m] distance matrix
     indices = torch.argmin(dists, dim=1)
-    closest_pts = pts2[indices]
-    midpoints = (pts1 + closest_pts) / 2
-    return midpoints
+    return pts2[indices]
 
 
+# TODO: Multiple curves generation
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
     aabb1, pts1 = sequence_joining(uv1, surf1)
     aabb2, pts2 = sequence_joining(uv2, surf2)
+
     pts3d1 = torch.tensor(
-        surf1.evaluate_list(pts1.cpu().tolist()), device=torch.device("cuda")
+        surf1.evaluate_list(pts1[0].cpu().tolist()), device=torch.device("cuda")
     )
     pts3d2 = torch.tensor(
-        surf2.evaluate_list(pts2.cpu().tolist()), device=torch.device("cuda")
+        surf2.evaluate_list(pts2[0].cpu().tolist()), device=torch.device("cuda")
     )
-    midpoints = find_closest_points_and_midpoint(pts3d1, pts3d2)
-    pts = accuracy_improvement(midpoints, surf1, surf2)
+    evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
+    evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
+
+    closest_pts = find_closest_points(pts3d1, pts3d2)
+    midpoints = (pts3d1 + closest_pts) / 2.0
+    pts = accuracy_improvement(midpoints, evalpts1, evalpts2)
 
     # Gen imgui AABBs
     uv3d1 = torch.tensor(
@@ -378,10 +384,18 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv3d2 = torch.tensor(
         surf2.evaluate_list(uv2.reshape(-1, 2).cpu().tolist())
     ).reshape(-1, 2, 3)
-    aabb3d1 = torch.tensor(
-        surf1.evaluate_list(aabb1.reshape(-1, 2).cpu().tolist())
-    ).reshape(-1, 2, 3)
-    aabb3d2 = torch.tensor(
-        surf2.evaluate_list(aabb2.reshape(-1, 2).cpu().tolist())
-    ).reshape(-1, 2, 3)
+    aabb3d1 = []
+    for aabb in aabb1:
+        aabb3d1.append(
+            torch.tensor(
+                surf1.evaluate_list(aabb.reshape(-1, 2).cpu().tolist())
+            ).reshape(-1, 2, 3)
+        )
+    aabb3d2 = []
+    for aabb2 in aabb2:
+        aabb3d2.append(
+            torch.tensor(
+                surf2.evaluate_list(aabb.reshape(-1, 2).cpu().tolist())
+            ).reshape(-1, 2, 3)
+        )
     return uv3d1, uv3d2, aabb3d1, aabb3d2, pts

@@ -33,36 +33,42 @@ def impl_glfw_init(window_name="SUI-NURBS", width=1280, height=720):
 def draw_aabb(pts, renderer, isRed=True, isGreen=False):
     # Iterate over all given AABB diagonal pairs, create and display each box.
     actors = []
-    for min_point, max_point in zip(pts[:, 0], pts[:, 1]):
-        # Create AABB box.
-        box = vtk.vtkCubeSource()
-        box.SetBounds(
-            min_point[0],
-            max_point[0],
-            min_point[1],
-            max_point[1],
-            min_point[2],
-            max_point[2],
-        )
-        box.Update()
+    def add_actor(pts):
+        for min_point, max_point in zip(pts[:, 0], pts[:, 1]):
+            # Create AABB box.
+            box = vtk.vtkCubeSource()
+            box.SetBounds(
+                min_point[0],
+                max_point[0],
+                min_point[1],
+                max_point[1],
+                min_point[2],
+                max_point[2],
+            )
+            box.Update()
 
-        # Create mapper and actor.
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(box.GetOutputPort())
-        actor = vtk.vtkActor()
-        actor.SetMapper(mapper)
-        actor.GetProperty().SetRepresentationToWireframe()
-        actor.GetProperty().SetLighting(False)
-        if isRed:
-            actor.GetProperty().SetColor(1.0, 0.0, 0.0)
-        elif isGreen:
-            actor.GetProperty().SetColor(0.0, 1.0, 0.0)
-        else:
-            actor.GetProperty().SetColor(0.0, 0.0, 1.0)
+            # Create mapper and actor.
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputConnection(box.GetOutputPort())
+            actor = vtk.vtkActor()
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetRepresentationToWireframe()
+            actor.GetProperty().SetLighting(False)
+            if isRed:
+                actor.GetProperty().SetColor(1.0, 0.0, 0.0)
+            elif isGreen:
+                actor.GetProperty().SetColor(0.0, 1.0, 0.0)
+            else:
+                actor.GetProperty().SetColor(0.0, 0.0, 1.0)
 
-        # Add to renderer.
-        renderer.AddActor(actor)
-        actors.append(actor)
+            # Add to renderer.
+            renderer.AddActor(actor)
+            actors.append(actor)
+    if isinstance(pts, list):
+        for pt in pts:
+            add_actor(pt)
+    else:
+        add_actor(pts)
     return actors
 
 
@@ -100,33 +106,41 @@ def draw_surf(surf, renderer, isGreen=True):
 
 
 def draw_curve(curve, renderer):
-    curve = curve.cpu().numpy()
+    actors = []
+    def add_curve(curve):
+        curve = curve.cpu().numpy()
 
-    # Create a vtkPoints object and store the points in it
-    points = vtk.vtkPoints()
-    points.SetData(numpy_support.numpy_to_vtk(curve))
+        # Create a vtkPoints object and store the points in it
+        points = vtk.vtkPoints()
+        points.SetData(numpy_support.numpy_to_vtk(curve))
 
-    # Create a polydata to store everything in
-    polydata = vtk.vtkPolyData()
+        # Create a polydata to store everything in
+        polydata = vtk.vtkPolyData()
 
-    spline = vtk.vtkParametricSpline()
-    spline.SetPoints(points)
+        spline = vtk.vtkParametricSpline()
+        spline.SetPoints(points)
 
-    function_source = vtk.vtkParametricFunctionSource()
-    function_source.SetParametricFunction(spline)
-    function_source.SetUResolution(100 * polydata.GetNumberOfPoints())
-    function_source.Update()
+        function_source = vtk.vtkParametricFunctionSource()
+        function_source.SetParametricFunction(spline)
+        function_source.SetUResolution(100 * polydata.GetNumberOfPoints())
+        function_source.Update()
 
-    # Setup actor and mapper
-    mapper = vtk.vtkPolyDataMapper()
-    mapper.SetInputConnection(function_source.GetOutputPort())
+        # Setup actor and mapper
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(function_source.GetOutputPort())
 
-    actor = vtk.vtkActor()
-    actor.SetMapper(mapper)
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
 
-    # Add the actor to the renderer
-    renderer.AddActor(actor)
-    return [actor]
+        # Add the actor to the renderer
+        renderer.AddActor(actor)
+        actors.append(actor)
+    if isinstance(curve, list):
+        for c in curve:
+            add_curve(c)
+    else:
+        add_curve(curve)
+    return actors
 
 
 def pan_camera(camera, right_amount, up_amount):
