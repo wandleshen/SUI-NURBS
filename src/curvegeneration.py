@@ -358,44 +358,41 @@ def find_closest_points(pts1, pts2):
     return pts2[indices]
 
 
-# TODO: Multiple curves generation
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
     aabb1, pts1 = sequence_joining(uv1, surf1)
     aabb2, pts2 = sequence_joining(uv2, surf2)
 
-    pts3d1 = torch.tensor(
-        surf1.evaluate_list(pts1[0].cpu().tolist()), device=torch.device("cuda")
-    )
-    pts3d2 = torch.tensor(
-        surf2.evaluate_list(pts2[0].cpu().tolist()), device=torch.device("cuda")
-    )
     evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
     evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
 
-    closest_pts = find_closest_points(pts3d1, pts3d2)
-    midpoints = (pts3d1 + closest_pts) / 2.0
-    pts = accuracy_improvement(midpoints, evalpts1, evalpts2)
+    all_pts = []
+    for i in range(len(aabb1)):
+        pts3d1 = torch.tensor(
+            surf1.evaluate_list(pts1[i].tolist()), device=torch.device("cuda")
+        )
+        pts3d2 = torch.tensor(
+            surf2.evaluate_list(pts2[i].tolist()), device=torch.device("cuda")
+        )
+
+        closest_pts = find_closest_points(pts3d1, pts3d2)
+        midpoints = (pts3d1 + closest_pts) / 2.0
+        pts = accuracy_improvement(midpoints, evalpts1, evalpts2)
+        all_pts.append(pts)
 
     # Gen imgui AABBs
-    uv3d1 = torch.tensor(
-        surf1.evaluate_list(uv1.reshape(-1, 2).cpu().tolist())
-    ).reshape(-1, 2, 3)
-    uv3d2 = torch.tensor(
-        surf2.evaluate_list(uv2.reshape(-1, 2).cpu().tolist())
-    ).reshape(-1, 2, 3)
+    uv3d1 = torch.tensor(surf1.evaluate_list(uv1.reshape(-1, 2).tolist())).reshape(
+        -1, 2, 3
+    )
+    uv3d2 = torch.tensor(surf2.evaluate_list(uv2.reshape(-1, 2).tolist())).reshape(
+        -1, 2, 3
+    )
     aabb3d1 = []
     for aabb in aabb1:
         aabb3d1.append(
-            torch.tensor(
-                surf1.evaluate_list(aabb.reshape(-1, 2).cpu().tolist())
-            ).reshape(-1, 2, 3)
+            torch.tensor(surf1.evaluate_list(aabb.reshape(-1, 2).tolist())).reshape(
+                -1, 2, 3
+            )
         )
     aabb3d2 = []
-    for aabb2 in aabb2:
-        aabb3d2.append(
-            torch.tensor(
-                surf2.evaluate_list(aabb.reshape(-1, 2).cpu().tolist())
-            ).reshape(-1, 2, 3)
-        )
-    return uv3d1, uv3d2, aabb3d1, aabb3d2, pts
+    return uv3d1, uv3d2, aabb3d1, aabb3d2, all_pts

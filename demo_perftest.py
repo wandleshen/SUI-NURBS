@@ -286,18 +286,13 @@ ctrlpts2 = torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda"))
 def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2):
     uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
     _, pts1 = sequence_joining(uv1, surf1)
-    # _, pts2 = sequence_joining(uv2, surf2)
-    pts2 = pts1
     pts3d1 = torch.tensor(
-        surf1.evaluate_list(pts1[0].cpu().tolist()), device=torch.device("cuda")
-    )
-    pts3d2 = torch.tensor(
-        surf2.evaluate_list(pts2[0].cpu().tolist()), device=torch.device("cuda")
+        surf1.evaluate_list(pts1[0].tolist()), device=torch.device("cuda")
     )
     evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
     evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
 
-    closest_pts = find_closest_points(pts3d1, pts3d2)
+    closest_pts = find_closest_points(pts3d1, evalpts2)
     midpoints = (pts3d1 + closest_pts) / 2.0
     pts = accuracy_improvement(midpoints, evalpts1, evalpts2)
 
