@@ -19,8 +19,8 @@ def cartesian_product_rowwise(tensor_a, tensor_b):
     return cartesian_rowwise
 
 
-def cal_min_aabbs(u, v, col, surf):
-    pts = cartesian_product_rowwise(u[col[:, 0]], v[col[:, 1]])
+def cal_min_aabbs(u, v, col, surf, scaler=100.0):
+    pts = cartesian_product_rowwise(u[col[:, 0]], v[col[:, 1]]) / scaler
     pts = torch.tensor(
         surf.evaluate_list(pts.reshape(-1, 2).tolist()), device=torch.device("cuda")
     ).reshape(-1, 4, 3)
@@ -30,9 +30,9 @@ def cal_min_aabbs(u, v, col, surf):
     return torch.cat([min_vals, max_vals], dim=1)
 
 
-def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2):
-    aabb1 = cal_min_aabbs(u1, v1, col1, surf1)  # [n, 2, 3]
-    aabb2 = cal_min_aabbs(u2, v2, col2, surf2)  # [m, 2, 3]
+def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler):
+    aabb1 = cal_min_aabbs(u1, v1, col1, surf1, scaler)  # [n, 2, 3]
+    aabb2 = cal_min_aabbs(u2, v2, col2, surf2, scaler)  # [m, 2, 3]
 
     n = aabb1.shape[0]
     m = aabb2.shape[0]
@@ -55,7 +55,7 @@ def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2):
     return uv1[indices[:, 0].unique()], uv2[indices[:, 1].unique()]
 
 
-def gen_grids(aabb, surf):
+def gen_grids(aabb, surf, scaler=100.0):
     diff = aabb[:, 1] - aabb[:, 0]
     res = torch.tensor(
         [torch.min(diff[:, 0]), torch.min(diff[:, 1])], device=torch.device("cuda")
@@ -66,8 +66,8 @@ def gen_grids(aabb, surf):
     grids = torch.stack([grid_min, grid_max], dim=1).int()
     graph = torch.zeros(
         [
-            math.ceil(max(surf.knotvector_u) // res[0]),
-            math.ceil(max(surf.knotvector_v) // res[1]),
+            math.ceil(max(surf.knotvector_u) // res[0] * scaler),
+            math.ceil(max(surf.knotvector_v) // res[1] * scaler),
         ],
         dtype=torch.int8,
         device=torch.device("cuda"),
@@ -126,6 +126,7 @@ def bound_reduce(aabb, graph, offset):
 
 def expand_cluster(cluster, graph, width, offset):
     expand = torch.ones(4, dtype=bool, device=torch.device("cuda"))
+    flag = False
     while True:
         neighbors = torch.tensor(
             [
@@ -151,14 +152,14 @@ def expand_cluster(cluster, graph, width, offset):
         for i in range(4):
             if expand[i]:
                 expand[i] = has_feature(neighbors[i], graph)
-        if (~expand[0] & ~expand[3]) | (~expand[1] & ~expand[2]):
+        if flag or ((~expand[0] & ~expand[3]) | (~expand[1] & ~expand[2])):
             break
         for i in range(4):
             if expand[i]:
                 cluster += offset[i]
         lens = cluster[1] - cluster[0]
         if width > 0.0 and torch.any(lens > width):
-            break
+            flag = True
     return cluster, expand
 
 
@@ -198,6 +199,13 @@ def gen_new_cluster(cluster, graph, offset):
     index = torch.argmax(feature_counts)
     target_neighbor = neighbor_subgrids[index]
     cluster = bound_reduce(target_neighbor, graph, offset)
+    for i in range(4):
+        if i != index:
+            area = graph[
+                neighbor_subgrids[i, 0, 0] : neighbor_subgrids[i, 1, 0],
+                neighbor_subgrids[i, 0, 1] : neighbor_subgrids[i, 1, 1],
+            ]
+            area = 0
     new_lens = cluster[1] - cluster[0]
     half_lens = new_lens // 2
     quarter_lens = new_lens // 4
@@ -252,13 +260,13 @@ def adjust_first_two_clusters(clusters, graph, offset):
     return clusters
 
 
-def sequence_joining(uv, surf):
-    graph, res = gen_grids(uv, surf)
+def sequence_joining(uv, surf, scaler=100.0, threshold=5):
+    graph, res = gen_grids(uv, surf, scaler)
     all_centroids = []
     all_means = []
     while torch.any(graph > 0):
         clusters = []
-        pos = torch.nonzero(graph)
+        pos = torch.nonzero(graph > 0)
         # Initial cluster
         cluster = torch.tensor(
             [
@@ -293,6 +301,8 @@ def sequence_joining(uv, surf):
                 break
 
         # clusters = adjust_first_two_clusters(clusters, graph, offset)
+        if len(clusters) < threshold:
+            continue
 
         centroids = torch.zeros([len(clusters) + 1, 2, 2], device=torch.device("cuda"))
         centroids[0] = (
@@ -308,8 +318,8 @@ def sequence_joining(uv, surf):
         for i, cluster in enumerate(clusters):
             centroids[i + 1] = cluster.float() * res
 
-        all_centroids.append(centroids)
-        all_means.append(torch.mean(centroids, dim=1))
+        all_centroids.append(centroids / scaler)
+        all_means.append(torch.mean(centroids, dim=1) / scaler)
     return all_centroids, all_means
 
 
@@ -358,10 +368,10 @@ def find_closest_points(pts1, pts2):
     return pts2[indices]
 
 
-def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
-    uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
-    aabb1, pts1 = sequence_joining(uv1, surf1)
-    aabb2, pts2 = sequence_joining(uv2, surf2)
+def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=100.0):
+    uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler)
+    aabb1, pts1 = sequence_joining(uv1, surf1, scaler)
+    _, pts2 = sequence_joining(uv2, surf2, scaler)
 
     evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
     evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
@@ -381,10 +391,10 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
         all_pts.append(pts)
 
     # Gen imgui AABBs
-    uv3d1 = torch.tensor(surf1.evaluate_list(uv1.reshape(-1, 2).tolist())).reshape(
+    uv3d1 = torch.tensor(surf1.evaluate_list((uv1 / scaler).reshape(-1, 2).tolist())).reshape(
         -1, 2, 3
     )
-    uv3d2 = torch.tensor(surf2.evaluate_list(uv2.reshape(-1, 2).tolist())).reshape(
+    uv3d2 = torch.tensor(surf2.evaluate_list((uv2 / scaler).reshape(-1, 2).tolist())).reshape(
         -1, 2, 3
     )
     aabb3d1 = []
@@ -394,5 +404,4 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2):
                 -1, 2, 3
             )
         )
-    aabb3d2 = []
-    return uv3d1, uv3d2, aabb3d1, aabb3d2, all_pts
+    return uv3d1, uv3d2, aabb3d1, all_pts

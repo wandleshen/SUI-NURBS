@@ -33,6 +33,7 @@ def impl_glfw_init(window_name="SUI-NURBS", width=1280, height=720):
 def draw_aabb(pts, renderer, isRed=True, isGreen=False):
     # Iterate over all given AABB diagonal pairs, create and display each box.
     actors = []
+
     def add_actor(pts):
         for min_point, max_point in zip(pts[:, 0], pts[:, 1]):
             # Create AABB box.
@@ -64,6 +65,7 @@ def draw_aabb(pts, renderer, isRed=True, isGreen=False):
             # Add to renderer.
             renderer.AddActor(actor)
             actors.append(actor)
+
     if isinstance(pts, list):
         for pt in pts:
             add_actor(pt)
@@ -107,6 +109,7 @@ def draw_surf(surf, renderer, isGreen=True):
 
 def draw_curve(curve, renderer):
     actors = []
+
     def add_curve(curve):
         curve = curve.cpu().numpy()
 
@@ -135,6 +138,7 @@ def draw_curve(curve, renderer):
         # Add the actor to the renderer
         renderer.AddActor(actor)
         actors.append(actor)
+
     if isinstance(curve, list):
         for c in curve:
             add_curve(c)
@@ -194,8 +198,6 @@ def handle_changes(
 
 
 def render(
-    aabb1,
-    aabb2,
     surf1,
     surf2,
     extract1,
@@ -203,7 +205,6 @@ def render(
     stripped1,
     stripped2,
     cluster1,
-    cluster2,
     curve,
     window_name="SUI-NURBS",
     width=1280,
@@ -271,8 +272,8 @@ def render(
     glfw.set_scroll_callback(window, on_mouse_scroll)
     glfw.set_mouse_button_callback(window, on_mouse_button)
 
-    checkboxes = [False, False, True, True, False, False, False, False, False]
-    changes = [False, False, False, False, False, False, False, False, False]
+    checkboxes = [False, False, True, True, False, False, False, False]
+    changes = [False, False, False, False, False, False, False, False]
     actors_dict = {}
 
     actors_dict["surf1"] = draw_surf(surf1, renderer)
@@ -289,17 +290,13 @@ def render(
         changes[3], checkboxes[3] = imgui.checkbox("Surface2", checkboxes[3])
         changes[4], checkboxes[4] = imgui.checkbox("Stripped1", checkboxes[4])
         changes[5], checkboxes[5] = imgui.checkbox("Stripped2", checkboxes[5])
-        changes[6], checkboxes[6] = imgui.checkbox("Cluster1", checkboxes[6])
-        changes[7], checkboxes[7] = imgui.checkbox("Cluster2", checkboxes[7])
-        changes[8], checkboxes[8] = imgui.checkbox("Curve", checkboxes[8])
+        changes[6], checkboxes[6] = imgui.checkbox("Cluster Result", checkboxes[6])
+        changes[7], checkboxes[7] = imgui.checkbox("Curve", checkboxes[7])
 
         imgui.end()
         imgui.render()
         render_window.Render()
 
-        handle_changes(
-            0, "aabb1", draw_aabb, renderer, actors_dict, changes, checkboxes, aabb1
-        )
         handle_changes(
             0,
             "ext1",
@@ -310,9 +307,6 @@ def render(
             checkboxes,
             extract1,
             isRed=False,
-        )
-        handle_changes(
-            1, "aabb2", draw_aabb, renderer, actors_dict, changes, checkboxes, aabb2
         )
         handle_changes(
             1,
@@ -375,18 +369,6 @@ def render(
         )
         handle_changes(
             7,
-            "cluster2",
-            draw_aabb,
-            renderer,
-            actors_dict,
-            changes,
-            checkboxes,
-            cluster2,
-            isRed=False,
-            isGreen=True,
-        )
-        handle_changes(
-            8,
             "curve",
             draw_curve,
             renderer,

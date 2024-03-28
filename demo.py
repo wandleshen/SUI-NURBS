@@ -255,8 +255,9 @@ ctrlpts = np.array(
     ]
 )
 
-M = 85
-N = 85
+M = 1024
+N = 1024
+SCALER = 100.0
 
 ctrlpts4d = np.concatenate(
     (ctrlpts, np.ones((ctrlpts.shape[0], ctrlpts.shape[1], 1), dtype=float)), axis=-1
@@ -278,6 +279,7 @@ pts, u1, v1 = gen_aabb(
     N,
     3,
     3,
+    scaler=SCALER,
 )
 
 pts2, u2, v2 = gen_aabb(
@@ -288,18 +290,17 @@ pts2, u2, v2 = gen_aabb(
     N,
     3,
     3,
+    scaler=SCALER,
 )
 
 col, col2 = region_extraction(pts, pts2)
-stripped, stripped2, cluster, cluster2, curve = gen_curves(
-    u1, v1, col, surf, u2, v2, col2, surf2
+stripped, stripped2, cluster, curve = gen_curves(
+    u1, v1, col, surf, u2, v2, col2, surf2, scaler=SCALER
 )
 extract, pts = utils.extract_aabb(pts, col)
 extract2, pts2 = utils.extract_aabb(pts2, col2)
 
 utils.render(
-    pts,
-    pts2,
     surf,
     surf2,
     extract,
@@ -307,6 +308,5 @@ utils.render(
     stripped,
     stripped2,
     cluster,
-    cluster2,
     curve,
 )

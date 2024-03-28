@@ -283,9 +283,9 @@ knot_v2 = torch.tensor(surf2.knotvector_v, device=torch.device("cuda"))
 ctrlpts2 = torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda"))
 
 
-def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2):
-    uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2)
-    _, pts1 = sequence_joining(uv1, surf1)
+def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=1.0):
+    uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler)
+    _, pts1 = sequence_joining(uv1, surf1, scaler, threshold=1)
     pts3d1 = torch.tensor(
         surf1.evaluate_list(pts1[0].tolist()), device=torch.device("cuda")
     )
@@ -300,25 +300,9 @@ def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2):
 
 
 # Warm-up
-pts, u1, v1 = gen_aabb(
-    knot_u1,
-    knot_v1,
-    ctrlpts1,
-    M,
-    N,
-    3,
-    3,
-)
+pts, u1, v1 = gen_aabb(knot_u1, knot_v1, ctrlpts1, M, N, 3, 3, scaler=1.0)
 
-pts2, u2, v2 = gen_aabb(
-    knot_u2,
-    knot_v2,
-    ctrlpts2,
-    M,
-    N,
-    3,
-    3,
-)
+pts2, u2, v2 = gen_aabb(knot_u2, knot_v2, ctrlpts2, M, N, 3, 3, scaler=1.0)
 
 col, col2 = region_extraction(pts, pts2)
 curve = gen_curves_perf(u1, v1, col, surf, u2, v2, col2, surf2)
@@ -330,25 +314,9 @@ import cProfile
 pr = cProfile.Profile()
 pr.enable()
 
-pts, u1, v1 = gen_aabb(
-    knot_u1,
-    knot_v1,
-    ctrlpts1,
-    M,
-    N,
-    3,
-    3,
-)
+pts, u1, v1 = gen_aabb(knot_u1, knot_v1, ctrlpts1, M, N, 3, 3, scaler=1.0)
 
-pts2, u2, v2 = gen_aabb(
-    knot_u2,
-    knot_v2,
-    ctrlpts2,
-    M,
-    N,
-    3,
-    3,
-)
+pts2, u2, v2 = gen_aabb(knot_u2, knot_v2, ctrlpts2, M, N, 3, 3, scaler=1.0)
 
 col, col2 = region_extraction(pts, pts2)
 curve = gen_curves_perf(u1, v1, col, surf, u2, v2, col2, surf2)

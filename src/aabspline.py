@@ -1,7 +1,9 @@
 import torch
 
 
-def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.01):
+def gen_aabb(
+    knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.01, scaler=100.0
+):
     """
     Generate Axis-Aligned Bounding Boxes (AABBs) for a given NURBS surface
 
@@ -13,6 +15,7 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     p, q (int): Degree of the surface in U or V direction
     delta (float): Amount to expand the bounding box
     eps (float): Value for the edge of surface's bounding boxes expansion
+    scaler (float): Scaler for the knot vectors
 
     Returns:
     aabb (torch.Tensor): Axis-Aligned Bounding Boxes
@@ -20,6 +23,8 @@ def gen_aabb(knotvector_u, knotvector_v, ctrlpts, m, n, p, q, delta=1.0, eps=0.0
     """
 
     # Get all basic functions
+    knotvector_u *= scaler
+    knotvector_v *= scaler
     u, i = gen_intervals(knotvector_u, m, p, eps)
     Ni = basic_func(u, p, i, knotvector_u)  # [m, p+1, 3]
     v, j = gen_intervals(knotvector_v, n, q, eps)
