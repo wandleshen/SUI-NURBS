@@ -260,7 +260,7 @@ def adjust_first_two_clusters(clusters, graph, offset):
     return clusters
 
 
-def sequence_joining(uv, surf, scaler=100.0, threshold=5):
+def sequence_joining(uv, surf, scaler=100.0, threshold=1):
     graph, res = gen_grids(uv, surf, scaler)
     all_centroids = []
     all_means = []

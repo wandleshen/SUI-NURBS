@@ -257,19 +257,21 @@ ctrlpts = np.array(
 
 M = 1024
 N = 1024
-SCALER = 100.0
+P = 4
+Q = 4
+SCALER = 25.0
 
 ctrlpts4d = np.concatenate(
     (ctrlpts, np.ones((ctrlpts.shape[0], ctrlpts.shape[1], 1), dtype=float)), axis=-1
 )
-# even_rows = np.arange(1, ctrlpts4d.shape[1], 2)
-# ctrlpts4d[:, even_rows, -1] = .9
+even_rows = np.arange(1, ctrlpts4d.shape[1], 2)
+ctrlpts4d[:, even_rows, -1] = .9
 
 ctrlpts4d_rev = ctrlpts4d[..., [1, 0, 2, 3]]
 
-surf = utils.gen_surface(ctrlpts4d.tolist(), 100)
+surf = utils.gen_surface(ctrlpts4d.tolist(), P, Q, 100)
 
-surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), 100)
+surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), P, Q, 100)
 
 pts, u1, v1 = gen_aabb(
     torch.tensor(surf.knotvector_u, device=torch.device("cuda")),
@@ -277,8 +279,8 @@ pts, u1, v1 = gen_aabb(
     torch.tensor(surf.ctrlpts2d, device=torch.device("cuda")),
     M,
     N,
-    3,
-    3,
+    P,
+    Q,
     scaler=SCALER,
 )
 
@@ -288,8 +290,8 @@ pts2, u2, v2 = gen_aabb(
     torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda")),
     M,
     N,
-    3,
-    3,
+    P,
+    Q,
     scaler=SCALER,
 )
 

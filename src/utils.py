@@ -386,19 +386,19 @@ def render(
     glfw.terminate()
 
 
-def gen_surface(ctrlpts, res=50):
+def gen_surface(ctrlpts, p, q, res=50):
     # Create a NURBS surface
     surf = NURBS.Surface()
 
     # Set degrees
-    surf.degree_u = 3
-    surf.degree_v = 3
+    surf.degree_u = p
+    surf.degree_v = q
 
     # Set control points
     surf.ctrlpts2d = ctrlpts
 
-    surf.knotvector_u = knotvector.generate(3, len(ctrlpts))
-    surf.knotvector_v = knotvector.generate(3, len(ctrlpts[0]))
+    surf.knotvector_u = knotvector.generate(p, len(ctrlpts))
+    surf.knotvector_v = knotvector.generate(q, len(ctrlpts[0]))
 
     # Set evaluation delta
     surf.delta = 1.0 / res
