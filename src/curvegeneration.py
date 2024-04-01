@@ -260,7 +260,7 @@ def adjust_first_two_clusters(clusters, graph, offset):
     return clusters
 
 
-def sequence_joining(uv, surf, scaler=100.0, threshold=1):
+def sequence_joining(uv, surf, scaler=100.0, threshold=5):
     graph, res = gen_grids(uv, surf, scaler)
     all_centroids = []
     all_means = []
@@ -280,7 +280,7 @@ def sequence_joining(uv, surf, scaler=100.0, threshold=1):
             [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]],
             device=torch.device("cuda"),
         )
-        width = -1.0
+        width = 5.0
         count = 0
         while True:
             if count == 2:
@@ -351,7 +351,7 @@ def accuracy_improvement(pts, evalpts1, evalpts2, max_iter=20, threshold=1e-3):
             ],
             dim=1,
         )
-        x = torch.linalg.solve(A, b)
+        x = torch.linalg.lstsq(A, b).solution
         pts[mask][mask2] = x
         mask[mask.clone()][mask2] = (
             torch.norm(x - pts[mask][mask2], dim=1)
