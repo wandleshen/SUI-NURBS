@@ -30,9 +30,9 @@ def cal_min_aabbs(u, v, col, surf, scaler=100.0):
     return torch.cat([min_vals, max_vals], dim=1)
 
 
-def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler):
-    aabb1 = cal_min_aabbs(u1, v1, col1, surf1, scaler)  # [n, 2, 3]
-    aabb2 = cal_min_aabbs(u2, v2, col2, surf2, scaler)  # [m, 2, 3]
+def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2):
+    aabb1 = cal_min_aabbs(u1, v1, col1, surf1, scaler1)  # [n, 2, 3]
+    aabb2 = cal_min_aabbs(u2, v2, col2, surf2, scaler2)  # [m, 2, 3]
 
     n = aabb1.shape[0]
     m = aabb2.shape[0]
@@ -368,10 +368,12 @@ def find_closest_points(pts1, pts2):
     return pts2[indices]
 
 
-def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=100.0):
-    uv1, uv2 = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler)
-    aabb1, pts1 = sequence_joining(uv1, surf1, scaler)
-    _, pts2 = sequence_joining(uv2, surf2, scaler)
+def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=100.0):
+    uv1, uv2 = strip_thinning(
+        u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2
+    )
+    aabb1, pts1 = sequence_joining(uv1, surf1, scaler1)
+    _, pts2 = sequence_joining(uv2, surf2, scaler2)
 
     evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
     evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
@@ -391,12 +393,12 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=100.0):
         all_pts.append(pts)
 
     # Gen imgui AABBs
-    uv3d1 = torch.tensor(surf1.evaluate_list((uv1 / scaler).reshape(-1, 2).tolist())).reshape(
-        -1, 2, 3
-    )
-    uv3d2 = torch.tensor(surf2.evaluate_list((uv2 / scaler).reshape(-1, 2).tolist())).reshape(
-        -1, 2, 3
-    )
+    uv3d1 = torch.tensor(
+        surf1.evaluate_list((uv1 / scaler1).reshape(-1, 2).tolist())
+    ).reshape(-1, 2, 3)
+    uv3d2 = torch.tensor(
+        surf2.evaluate_list((uv2 / scaler2).reshape(-1, 2).tolist())
+    ).reshape(-1, 2, 3)
     aabb3d1 = []
     for aabb in aabb1:
         aabb3d1.append(

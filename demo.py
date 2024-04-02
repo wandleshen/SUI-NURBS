@@ -10,42 +10,42 @@ from src.curvegeneration import gen_curves
 from src import utils
 
 
-def main(filename, M, N, P, Q, SCALER):
-    ctrlpts4d = np.load(f"data/{filename}")
+def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1):
+    ctrlpts4d = np.load(f"data/{filename0}")
     # even_rows = np.arange(1, ctrlpts4d.shape[1], 2)
     # ctrlpts4d[:, even_rows, -1] = 0.9
 
-    ctrlpts4d_rev = ctrlpts4d[..., [1, 0, 2, 3]]
+    ctrlpts4d_rev = np.load(f"data/{filename1}")
 
-    surf = utils.gen_surface(ctrlpts4d.tolist(), P, Q, 100)
+    surf = utils.gen_surface(ctrlpts4d.tolist(), p0, q0, 50)
 
-    surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), P, Q, 100)
+    surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), p1, q1, 50)
 
     pts, u1, v1 = gen_aabb(
         torch.tensor(surf.knotvector_u, device=torch.device("cuda")),
         torch.tensor(surf.knotvector_v, device=torch.device("cuda")),
         torch.tensor(surf.ctrlpts2d, device=torch.device("cuda")),
-        M,
-        N,
-        P,
-        Q,
-        scaler=SCALER,
+        m0,
+        n0,
+        p0,
+        q0,
+        scaler=scaler0,
     )
 
     pts2, u2, v2 = gen_aabb(
         torch.tensor(surf2.knotvector_u, device=torch.device("cuda")),
         torch.tensor(surf2.knotvector_v, device=torch.device("cuda")),
         torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda")),
-        M,
-        N,
-        P,
-        Q,
-        scaler=SCALER,
+        m1,
+        n1,
+        p1,
+        q1,
+        scaler=scaler1,
     )
 
     col, col2 = region_extraction(pts, pts2)
     stripped, stripped2, cluster, curve = gen_curves(
-        u1, v1, col, surf, u2, v2, col2, surf2, scaler=SCALER
+        u1, v1, col, surf, u2, v2, col2, surf2, scaler0, scaler1
     )
     extract, pts = utils.extract_aabb(pts, col)
     extract2, pts2 = utils.extract_aabb(pts2, col2)
@@ -64,52 +64,71 @@ def main(filename, M, N, P, Q, SCALER):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Demo")
-    parser.add_argument(
-        "-f",
-        "--filename",
-        dest="filename",
-        required=True,
-        help="The filename of the data",
-    )
-    parser.add_argument(
-        "-m",
-        "--u_intervals",
-        dest="m",
-        required=False,
-        default=1024,
-        help="The number of intervals in the u direction",
-    )
-    parser.add_argument(
-        "-n",
-        "--v_intervals",
-        dest="n",
-        required=False,
-        default=1024,
-        help="The number of intervals in the v direction",
-    )
-    parser.add_argument(
-        "-p",
-        "--u_degree",
-        dest="p",
-        required=False,
-        default=3,
-        help="The degree of the u direction",
-    )
-    parser.add_argument(
-        "-q",
-        "--v_degree",
-        dest="q",
-        required=False,
-        default=3,
-        help="The degree of the v direction",
-    )
-    parser.add_argument(
-        "-s",
-        "--scaler",
-        dest="scaler",
-        required=False,
-        default=25.0,
-        help="The scaler of the knotvectors",
-    )
+    for i in range(2):
+        parser.add_argument(
+            f"-f{i}",
+            f"--filename{i}",
+            dest=f"filename{i}",
+            required=True,
+            help="The filename of the surface",
+        )
+        parser.add_argument(
+            f"-m{i}",
+            f"--u-intervals{i}",
+            dest=f"m{i}",
+            type=int,
+            required=False,
+            default=1024,
+            help="Number of intervals in the u-direction",
+        )
+        parser.add_argument(
+            f"-n{i}",
+            f"--v-intervals{i}",
+            dest=f"n{i}",
+            type=int,
+            required=False,
+            default=1024,
+            help="Number of intervals in the v-direction",
+        )
+        parser.add_argument(
+            f"-p{i}",
+            f"--u-degree{i}",
+            dest=f"p{i}",
+            type=int,
+            required=False,
+            default=3,
+            help="Degree of the B-spline basis function in the u-direction",
+        )
+        parser.add_argument(
+            f"-q{i}",
+            f"--v-degree{i}",
+            dest=f"q{i}",
+            type=int,
+            required=False,
+            default=3,
+            help="Degree of the B-spline basis function in the v-direction",
+        )
+        parser.add_argument(
+            f"-s{i}",
+            f"--scaler{i}",
+            dest=f"scaler{i}",
+            type=float,
+            required=False,
+            default=25.0,
+            help="Scaler of the knotvectors",
+        )
     args = parser.parse_args()
-    main(args.filename, args.m, args.n, args.p, args.q, args.scaler)
+    main(
+        args.filename0,
+        args.filename1,
+        args.m0,
+        args.m1,
+        args.n0,
+        args.n1,
+        args.p0,
+        args.p1,
+        args.q0,
+        args.q1,
+        args.scaler0,
+        args.scaler1,
+    )

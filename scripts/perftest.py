@@ -4,6 +4,10 @@ import numpy as np
 import torch
 import cProfile
 import argparse
+import sys
+import os
+
+sys.path.append(os.path.abspath("."))
 
 from src.aabspline import gen_aabb
 from src.overlaptest import region_extraction
@@ -35,7 +39,7 @@ def main(filename, M, N, P, Q, SCALER):
     ctrlpts2 = torch.tensor(surf2.ctrlpts2d, device=torch.device("cuda"))
 
     def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=SCALER):
-        uv1, _ = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler)
+        uv1, _ = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler, scaler)
         _, pts1 = sequence_joining(uv1, surf1, scaler, threshold=1)
         pts3d1 = torch.tensor(
             surf1.evaluate_list(pts1[0].tolist()), device=torch.device("cuda")
