@@ -34,10 +34,10 @@ The `demo.py` will output the intersection curves between two NURBS surfaces. We
 ### Arguments
 
 - `-f{i}`/`--filename{i}` (str): The path to the NURBS surface control points in numpy array format. You can generate the file w/ `np.save(filename, array)`, please make sure `array.shape=[a, b, 4]`.
-- `-m{i}`/`--u_intervals{i}` (int): The number of AABBs' intervals in the u-direction. Default: `1024`
-- `-n{i}`/`--v_intervals{i}` (int): The number of AABBs' intervals in the v-direction. Default: `1024`
-- `-p{i}`/`--u_degree{i}` (int): The degree of the NURBS surface in the u-direction. Default: `3`
-- `-q{i}`/`--v_degree{i}` (int): The degree of the NURBS surface in the v-direction. Default: `3`
+- `-m{i}`/`--u-intervals{i}` (int): The number of AABBs' intervals in the u-direction. Default: `1024`
+- `-n{i}`/`--v-intervals{i}` (int): The number of AABBs' intervals in the v-direction. Default: `1024`
+- `-p{i}`/`--u-degree{i}` (int): The degree of the NURBS surface in the u-direction. Default: `3`
+- `-q{i}`/`--v-degree{i}` (int): The degree of the NURBS surface in the v-direction. Default: `3`
 - `-s{i}`/`--scalar{i}` (float): The scalar for the knotvectors in order to avoid the `nan` problem. Default: `25.0`
 
 The `{i}s` refer to the index of the NURBS surface. You can set the index to `0` or `1` to specify the NURBS surface.
@@ -72,3 +72,47 @@ python scripts/gen_npy.py
 ```
 
 In `gen_npy.py`, you should edit the `ctrlpts` variable to generate the numpy array.
+
+## Generating NURBS surface control points
+
+We recommend using the `Blender` software to generate the NURBS surface control points. You can use the blender script to output the control points. One possible script is shown below.
+
+```python
+import bpy
+import numpy as np
+
+# Get the currently selected object in the scene
+obj = bpy.context.active_object
+V_COUNT = 4
+
+control_points_data = []
+
+# Check if the object is a surface
+if obj.type == 'SURFACE':
+    # Access the surface data of this object
+    curve_data = obj.data
+    count = 0
+    # Iterate through all the splines
+    for spline in curve_data.splines:
+        # If it's a NURBS type curve, access its control points
+        if spline.type == 'NURBS':
+            spline_points = []
+            for point in spline.points:
+                # Save the coordinates of the control points
+                spline_points.append(list(point.co[:]))
+                count += 1
+                if count == V_COUNT:
+                    control_points_data.append(spline_points)
+                    count = 0
+                    spline_points = []
+        
+ctrlpts = np.array(control_points_data)
+ctrlpts[..., 0:3] *= ctrlpts[..., 3, None]
+np.save('filename.npy', ctrlpts)
+```
+
+You should manually modify the `V_COUNT` and `filename.npy` to generate the NURBS surface control points. Then move the file into the `data` folder.
+
+## Thanks
+
+Many thanks to the authors of the original paper for providing the algorithm. We reimplemented the algorithm in Python and PyTorch for better performance. We also thank [SUI](https://space.bilibili.com/1954091502) for inspiring us to name the project. 

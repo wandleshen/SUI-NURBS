@@ -3,13 +3,22 @@ import math
 
 
 def cartesian_product_rowwise(tensor_a, tensor_b):
+    """
+    Compute the Cartesian product of two tensors row-wise.
+
+    Parameters:
+    tensor_a, tensor_b (torch.Tensor): Input tensors.
+
+    Returns:
+    cartesian_rowwise (torch.Tensor): The Cartesian product of the input tensors row-wise.
+    """
     n, _ = tensor_a.shape
 
-    # 广播tensor_a和tensor_b以形成所有组合
+    # Broadcast tensor_a and tensor_b to form all combinations
     tensor_a_expanded = tensor_a.unsqueeze(1).expand(-1, 2, -1).reshape(-1, 4)
     tensor_b_expanded = tensor_b.unsqueeze(2).expand(-1, -1, 2).reshape(-1, 4)
 
-    # 这样，我们得到每一对行的笛卡尔积
+    # This way, we get the Cartesian product of each pair of rows
     cartesian_rowwise = torch.zeros([n, 4, 2], device=torch.device("cuda"))
     for i in range(4):
         cartesian_rowwise[:, i] = torch.stack(
@@ -20,6 +29,18 @@ def cartesian_product_rowwise(tensor_a, tensor_b):
 
 
 def cal_min_aabbs(u, v, col, surf, scaler=100.0):
+    """
+    Calculate the minimum Axis-Aligned Bounding Boxes (AABBs) for a given NURBS surface.
+
+    Parameters:
+    u, v (torch.Tensor): Knot vectors in the U and V direction.
+    col (torch.Tensor): Indices to extract.
+    surf (object): A NURBS surface object.
+    scaler (float): Scaler for the knot vectors. Default is 100.0.
+
+    Returns:
+    aabb (torch.Tensor): The minimum AABBs for the surface.
+    """
     pts = cartesian_product_rowwise(u[col[:, 0]], v[col[:, 1]]) / scaler
     pts = torch.tensor(
         surf.evaluate_list(pts.reshape(-1, 2).tolist()), device=torch.device("cuda")
@@ -31,6 +52,18 @@ def cal_min_aabbs(u, v, col, surf, scaler=100.0):
 
 
 def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2):
+    """
+    Perform strip thinning on two NURBS surfaces.
+
+    Parameters:
+    u1, v1, u2, v2 (torch.Tensor): Knot vectors in the U and V direction for the two surfaces.
+    col1, col2 (torch.Tensor): Indices to extract for the two surfaces.
+    surf1, surf2 (object): NURBS surface objects.
+    scaler1, scaler2 (float): Scalers for the knot vectors.
+
+    Returns:
+    uv1, uv2 (torch.Tensor): The thinned AABBs in the U and V direction for the two surfaces.
+    """
     aabb1 = cal_min_aabbs(u1, v1, col1, surf1, scaler1)  # [n, 2, 3]
     aabb2 = cal_min_aabbs(u2, v2, col2, surf2, scaler2)  # [m, 2, 3]
 
@@ -56,13 +89,28 @@ def strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2):
 
 
 def gen_grids(aabb, surf, scaler=100.0):
+    """
+    Generate grids for a given NURBS surface.
+
+    Parameters:
+    aabb (torch.Tensor): A tensor of AABBs.
+    surf (object): A NURBS surface object.
+    scaler (float): Scaler for the knot vectors. Default is 100.0.
+
+    Returns:
+    graph, res (torch.Tensor): The generated grids and their resolution.
+    """
+    # Calculate the grid resolution
     diff = aabb[:, 1] - aabb[:, 0]
     res = torch.tensor(
         [torch.min(diff[:, 0]), torch.min(diff[:, 1])], device=torch.device("cuda")
     )
+
+    # Calculate the grid bounds
     grid_min = torch.floor(aabb[:, 0] / res)
     grid_max = torch.ceil(aabb[:, 1] / res)
 
+    # Generate the grids
     grids = torch.stack([grid_min, grid_max], dim=1).int()
     graph = torch.zeros(
         [
@@ -72,13 +120,25 @@ def gen_grids(aabb, surf, scaler=100.0):
         dtype=torch.int8,
         device=torch.device("cuda"),
     )
+
+    # Fill the grids with 1s
     for grid in grids:
         graph[grid[0, 0] : grid[1, 0], grid[0, 1] : grid[1, 1]] = 1
     return graph, res
 
 
 def has_feature(aabb, graph):
-    # 判断 aabb 是否在 graph 的范围内
+    """
+    Check if an AABB is within the range of the featured graph.
+
+    Parameters:
+    aabb (torch.Tensor): A tensor of AABBs.
+    graph (torch.Tensor): A tensor representing the featured graph.
+
+    Returns:
+    bool: True if the AABB is within the range of the graph, False otherwise.
+    """
+    # Check if the AABB is within the range of the graph
     if (
         aabb[0, 0] < 0
         or aabb[0, 1] < 0
@@ -87,12 +147,23 @@ def has_feature(aabb, graph):
     ):
         return False
     else:
+        # Check if the AABB overlaps with any feature in the graph
         area = graph[aabb[0, 0] : aabb[1, 0], aabb[0, 1] : aabb[1, 1]]
         return torch.any(area > 0)
 
 
 def bound_reduce(aabb, graph, offset):
-    # 缩减不含特征矩形的边界
+    """
+    Reduce the bounds of an AABB that does not contain any features.
+
+    Parameters:
+    aabb (torch.Tensor): A tensor of AABBs.
+    graph (torch.Tensor): A tensor representing a graph.
+    offset (torch.Tensor): An offset tensor.
+
+    Returns:
+    aabb (torch.Tensor): The reduced AABB.
+    """
     reduce = torch.ones(4, dtype=bool, device=torch.device("cuda"))
     while torch.any(reduce):
         sides = torch.tensor(
@@ -125,6 +196,18 @@ def bound_reduce(aabb, graph, offset):
 
 
 def expand_cluster(cluster, graph, width, offset):
+    """
+    Expand a cluster of AABBs.
+
+    Parameters:
+    cluster (torch.Tensor): A tensor of AABBs.
+    graph (torch.Tensor): A tensor representing a graph.
+    width (float): The maximum width of the cluster.
+    offset (torch.Tensor): An offset tensor.
+
+    Returns:
+    cluster, expand (torch.Tensor): The expanded cluster and a boolean tensor indicating which sides are able to expand.
+    """
     expand = torch.ones(4, dtype=bool, device=torch.device("cuda"))
     flag = False
     while True:
@@ -164,6 +247,17 @@ def expand_cluster(cluster, graph, width, offset):
 
 
 def gen_new_cluster(cluster, graph, offset):
+    """
+    Generate a new cluster of AABBs by expanding the current cluster towards the direction with the most features.
+
+    Parameters:
+    cluster (torch.Tensor): A tensor of AABBs representing the current cluster.
+    graph (torch.Tensor): A tensor representing a graph.
+    offset (torch.Tensor): An offset tensor.
+
+    Returns:
+    cluster (torch.Tensor): The new cluster of AABBs.
+    """
     lens = cluster[1] - cluster[0]
     # Get optimal neighbor subgrid
     neighbor_subgrids = torch.tensor(
@@ -221,6 +315,17 @@ def gen_new_cluster(cluster, graph, offset):
 
 
 def adjust_first_two_clusters(clusters, graph, offset):
+    """
+    Adjust the first two clusters of AABBs since they are not constrained by the local width.
+
+    Parameters:
+    clusters (list): A list of tensors of AABBs representing the current clusters.
+    graph (torch.Tensor): A tensor representing a graph.
+    offset (torch.Tensor): An offset tensor.
+
+    Returns:
+    clusters (list): The list of adjusted clusters of AABBs.
+    """
     if len(clusters) < 4:
         return clusters
     graph = torch.abs(graph)
@@ -261,6 +366,18 @@ def adjust_first_two_clusters(clusters, graph, offset):
 
 
 def sequence_joining(uv, surf, scaler=100.0, threshold=5):
+    """
+    Join sequences of AABBs into clusters and generate their centroids and AABBs.
+
+    Parameters:
+    uv (torch.Tensor): The knot vectors in the U and V direction.
+    surf (object): A NURBS surface object.
+    scaler (float): Scaler for the knot vectors. Default is 100.0.
+    threshold (int): The minimum number of AABBs for a cluster. Default is 5.
+
+    Returns:
+    all_centroids, all_means (list): The AABBs and centroids of the clusters.
+    """
     graph, res = gen_grids(uv, surf, scaler)
     all_centroids = []
     all_means = []
@@ -324,6 +441,16 @@ def sequence_joining(uv, surf, scaler=100.0, threshold=5):
 
 
 def point_to_surface(evalpts, points):
+    """
+    Find the closest points on a surface to a set of points.
+
+    Parameters:
+    evalpts (torch.Tensor): The points on the surface.
+    points (torch.Tensor): The set of points.
+
+    Returns:
+    torch.Tensor: The closest points on the surface.
+    """
     _, indices = torch.min(
         torch.norm(evalpts.unsqueeze(0) - points.unsqueeze(1), dim=2), dim=1
     )
@@ -331,6 +458,18 @@ def point_to_surface(evalpts, points):
 
 
 def accuracy_improvement(pts, evalpts1, evalpts2, max_iter=20, threshold=1e-3):
+    """
+    Improve the accuracy of a set of points by iteratively moving them closer to two surfaces.
+
+    Parameters:
+    pts (torch.Tensor): The set of points.
+    evalpts1, evalpts2 (torch.Tensor): The points on the two surfaces.
+    max_iter (int): The maximum number of iterations. Default is 20.
+    threshold (float): The distance threshold for convergence. Default is 1e-3.
+
+    Returns:
+    torch.Tensor: The set of points after accuracy improvement.
+    """
     mask = torch.ones(pts.shape[0], dtype=bool, device=torch.device("cuda"))
     while torch.any(mask) and max_iter > 0:
         d1 = point_to_surface(evalpts1, pts[mask])
@@ -361,6 +500,15 @@ def accuracy_improvement(pts, evalpts1, evalpts2, max_iter=20, threshold=1e-3):
 
 
 def find_closest_points(pts1, pts2):
+    """
+    Find the closest points in pts2 for each point in pts1.
+
+    Parameters:
+    pts1, pts2 (torch.Tensor): The sets of points.
+
+    Returns:
+    torch.Tensor: The closest points in pts2 for each point in pts1.
+    """
     dists = torch.norm(
         pts1.unsqueeze(1) - pts2.unsqueeze(0), dim=2
     )  # [n, m] distance matrix
@@ -369,6 +517,18 @@ def find_closest_points(pts1, pts2):
 
 
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=100.0):
+    """
+    Generate curves between two NURBS surfaces.
+
+    Parameters:
+    u1, v1, u2, v2 (torch.Tensor): Unstripped AABBs in the U and V direction for the two surfaces.
+    col1, col2 (torch.Tensor): Indices to extract for the two surfaces.
+    surf1, surf2 (object): NURBS surface objects.
+    scaler1, scaler2 (float): Scalers for the knot vectors.
+
+    Returns:
+    uv3d1, uv3d2, aabb3d1, all_pts (torch.Tensor): The 3D AABBs for the two surfaces, the 3D clustered AABBs for the first surface, and the generated curves.
+    """
     uv1, uv2 = strip_thinning(
         u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2
     )
