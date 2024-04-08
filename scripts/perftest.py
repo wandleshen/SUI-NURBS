@@ -13,12 +13,71 @@ from src.aabspline import gen_aabb
 from src.overlaptest import region_extraction
 from src.curvegeneration import (
     strip_thinning,
-    sequence_joining,
+    gen_grids,
+    expand_cluster,
+    gen_new_cluster,
     accuracy_improvement,
     find_closest_points,
 )
 from src import utils
 
+
+def sequence_joining_perf(uv, surf, scaler=100.0, threshold=5):
+    graph, res = gen_grids(uv, surf, scaler)
+    all_centroids = []
+    all_means = []
+    clusters = []
+    pos = torch.nonzero(graph > 0)
+    # Initial cluster
+    cluster = torch.tensor(
+        [
+            [pos[0, 0], pos[0, 1]],
+            [pos[0, 0] + 1, pos[0, 1] + 1],
+        ],
+        dtype=int,
+        device=torch.device("cuda"),
+    )
+    offset = torch.tensor(
+        [[[0, -1], [0, 0]], [[-1, 0], [0, 0]], [[0, 0], [1, 0]], [[0, 0], [0, 1]]],
+        device=torch.device("cuda"),
+    )
+    width = 5.0
+    count = 0
+    while True:
+        if count == 2:
+            width = torch.norm(
+                clusters[-1].mean(dim=1, dtype=float)
+                - clusters[-2].mean(dim=1, dtype=float)
+            )
+        cluster, expand = expand_cluster(cluster, graph, width, offset)
+        clusters.append(cluster)
+        if count < 2:
+            count += 1
+            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = -1
+        else:
+            graph[cluster[0, 0] : cluster[1, 0], cluster[0, 1] : cluster[1, 1]] = 0
+        if torch.any(expand):
+            cluster = gen_new_cluster(cluster, graph, offset)
+        else:
+            break
+
+    centroids = torch.zeros([len(clusters) + 1, 2, 2], device=torch.device("cuda"))
+    centroids[0] = (
+        torch.tensor(
+            [
+                [clusters[0][0, 0], clusters[0][0, 1]],
+                [clusters[0][0, 0], clusters[0][0, 1]],
+            ],
+            device=torch.device("cuda"),
+        )
+        * res
+    )
+    for i, cluster in enumerate(clusters):
+        centroids[i + 1] = cluster.float() * res
+
+    all_centroids.append(centroids / scaler)
+    all_means.append(torch.mean(centroids, dim=1) / scaler)
+    return all_centroids, all_means
 
 def main(filename, M, N, P, Q, SCALER):
     ctrlpts4d = np.load(f"data/{filename}")
@@ -40,7 +99,7 @@ def main(filename, M, N, P, Q, SCALER):
 
     def gen_curves_perf(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler=SCALER):
         uv1, _ = strip_thinning(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler, scaler)
-        _, pts1 = sequence_joining(uv1, surf1, scaler, threshold=1)
+        _, pts1 = sequence_joining_perf(uv1, surf1, scaler, threshold=1)
         pts3d1 = torch.tensor(
             surf1.evaluate_list(pts1[0].tolist()), device=torch.device("cuda")
         )
