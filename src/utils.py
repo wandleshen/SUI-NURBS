@@ -309,7 +309,7 @@ def render(
 
     # Reset the camera and set the background color
     renderer.ResetCamera()
-    renderer.SetBackground(0.1, 0.2, 0.4)
+    renderer.SetBackground(1.0, 1.0, 1.0)
 
     # Initialize the last mouse position and the window size
     lastX, lastY = width // 2, height // 2
@@ -467,8 +467,8 @@ def render(
             changes,
             checkboxes,
             cluster1,
-            isRed=False,
-            isGreen=True,
+            isRed=True,
+            isGreen=False,
         )
         handle_changes(
             7,

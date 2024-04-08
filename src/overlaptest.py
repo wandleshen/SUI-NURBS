@@ -132,6 +132,9 @@ def region_extraction(aabb1, aabb2, d=4):
     Rols = decompose_aabb(
         aabb1, aabb2, 2**kl, torch.tensor([0, 0, 0, 0], device=torch.device("cuda"))
     )
+    if Rols is None:
+        print("No intersection between two surfaces")
+        quit()
     while torch.sum(mn) > 0:
         kl = torch.clamp_max(mn, d)
         mn -= kl
