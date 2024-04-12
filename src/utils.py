@@ -130,16 +130,20 @@ def draw_surf(surf, renderer, isGreen=True):
     for point in plane_points:
         points.InsertNextPoint(point.tolist())
 
-    # Create point-based Delaunay 2D grid object and mapper.
-    delaunay = vtk.vtkDelaunay2D()
-    delaunay.SetInputData(polydata)
-    delaunay.Update()
-
     polydata.SetPoints(points)
     polydata.Modified()
 
+    reconstruction = vtk.vtkSurfaceReconstructionFilter()
+    reconstruction.SetInputData(polydata)
+    reconstruction.Update()
+
+    contours = vtk.vtkContourFilter()
+    contours.SetInputConnection(reconstruction.GetOutputPort())
+    contours.GenerateValues(1, 0, 0)
+
     polydata_mapper = vtk.vtkPolyDataMapper()
-    polydata_mapper.SetInputConnection(delaunay.GetOutputPort())
+    polydata_mapper.SetInputConnection(contours.GetOutputPort())
+    polydata_mapper.ScalarVisibilityOff()
 
     polydata_actor = vtk.vtkActor()
     polydata_actor.SetMapper(polydata_mapper)
