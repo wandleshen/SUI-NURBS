@@ -515,6 +515,34 @@ def find_closest_points(pts1, pts2):
     indices = torch.argmin(dists, dim=1)
     return pts2[indices]
 
+def is_inside_polygon(polygon, points):
+    # 获取每条边的起点和终点
+    edge_start = polygon
+    edge_end = polygon.roll(-1, dims=0)
+
+    # 计算每个点和所有边的交点次数
+    # 使用广播，点的y坐标与边的y坐标比较，获取每个点对所有边的位置情况
+    below_start = (points[:, 1].unsqueeze(1) - edge_start[:, 1]) > 0
+    below_end = (points[:, 1].unsqueeze(1) - edge_end[:, 1]) > 0
+    segments_cross = below_start != below_end
+
+    # 计算交叉点的x坐标并检查是否在点左侧
+    edge_dx = edge_end[:, 0] - edge_start[:, 0]
+    edge_dy = edge_end[:, 1] - edge_start[:, 1]
+    dx = ((points[:, 1].unsqueeze(1) - edge_start[:, 1]) * edge_dx) / edge_dy + edge_start[:, 0]
+    on_left = points[:, 0].unsqueeze(1) < dx
+
+    # 交叉点数是否为奇数标记点是否在多边形内
+    crossings = segments_cross & on_left
+    inside = crossings.sum(dim=1) % 2 == 1
+    return inside
+
+def trim_surf(surf, uv, scaler):
+    for trim in surf.trims:
+        polygon = torch.tensor(trim.evalpts, dtype=float, device=torch.device("cuda")) * scaler
+        index = ~(is_inside_polygon(polygon, uv[:, 0, :]) & is_inside_polygon(polygon, uv[:, 1, :]))
+        uv = uv[index]
+    return uv
 
 def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=100.0):
     """
@@ -532,9 +560,9 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=
     uv1, uv2 = strip_thinning(
         u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1, scaler2
     )
+    uv1 = trim_surf(surf1, uv1, scaler1)
+    uv2 = trim_surf(surf2, uv2, scaler2)
     aabb1, pts1 = sequence_joining(uv1, surf1, scaler1)
-    _, pts2 = sequence_joining(uv2, surf2, scaler2)
-
     evalpts1 = torch.tensor(surf1.evalpts, device=torch.device("cuda"))
     evalpts2 = torch.tensor(surf2.evalpts, device=torch.device("cuda"))
 
@@ -543,11 +571,8 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=
         pts3d1 = torch.tensor(
             surf1.evaluate_list(pts1[i].tolist()), device=torch.device("cuda")
         )
-        pts3d2 = torch.tensor(
-            surf2.evaluate_list(pts2[i].tolist()), device=torch.device("cuda")
-        )
 
-        closest_pts = find_closest_points(pts3d1, pts3d2)
+        closest_pts = find_closest_points(pts3d1, evalpts2)
         midpoints = (pts3d1 + closest_pts) / 2.0
         pts = accuracy_improvement(midpoints, evalpts1, evalpts2)
         all_pts.append(pts)

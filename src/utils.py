@@ -5,7 +5,7 @@ import vtk
 import numpy as np
 from vtk.util import numpy_support
 from imgui.integrations.glfw import GlfwRenderer
-from geomdl import NURBS, knotvector
+from geomdl import NURBS, knotvector, tessellate
 
 
 def impl_glfw_init(window_name="SUI-NURBS", width=1280, height=720):
@@ -140,9 +140,53 @@ def draw_surf(surf, renderer, isGreen=True):
     contours = vtk.vtkContourFilter()
     contours.SetInputConnection(reconstruction.GetOutputPort())
     contours.GenerateValues(1, 0, 0)
+    output_port = contours.GetOutputPort()
+
+    if surf.trims:
+        appendFilter = vtk.vtkAppendPolyData()
+
+        for trim in surf.trims:
+            trimPtsArray = trim.evalpts
+            trimPtsArray = surf.evaluate_list(trimPtsArray)
+            # 创建多边形的点集和细胞
+            trimPts = vtk.vtkPoints()
+            trimPolys = vtk.vtkCellArray()
+
+            # 添加点到 trimPts
+            for pt in trimPtsArray:
+                trimPts.InsertNextPoint(pt)
+
+            # 创建多边形细胞数据
+            poly = vtk.vtkPolygon()
+            poly.GetPointIds().SetNumberOfIds(len(trimPtsArray))
+            for idx, pt in enumerate(trimPtsArray):
+                poly.GetPointIds().SetId(idx, idx)
+            
+            trimPolys.InsertNextCell(poly)
+
+            # 创建单个的vtkPolyData对象
+            singlePolyData = vtk.vtkPolyData()
+            singlePolyData.SetPoints(trimPts)
+            singlePolyData.SetPolys(trimPolys)
+
+            # 添加到 appendFilter
+            appendFilter.AddInputData(singlePolyData)
+
+        # 所有多边形的数据进行合并
+        appendFilter.Update()
+        # 使用 vtkImplicitPolyDataDistance 将多边形数据转换为隐式函数
+        implicitPolyDataDistance = vtk.vtkImplicitPolyDataDistance()
+        implicitPolyDataDistance.SetInput(appendFilter.GetOutput())
+
+        # 使用clipper执行裁剪操作
+        clipper = vtk.vtkClipPolyData()
+        clipper.SetInputConnection(contours.GetOutputPort())
+        clipper.SetClipFunction(implicitPolyDataDistance)  # 使用vtkImplicitPolyDataDistance作为裁剪函数
+        # clipper.InsideOutOn()  # 如果需要的话裁剪外部
+        output_port = clipper.GetOutputPort()
 
     polydata_mapper = vtk.vtkPolyDataMapper()
-    polydata_mapper.SetInputConnection(contours.GetOutputPort())
+    polydata_mapper.SetInputConnection(output_port)
     polydata_mapper.ScalarVisibilityOff()
 
     polydata_actor = vtk.vtkActor()
@@ -495,7 +539,7 @@ def render(
     glfw.terminate()
 
 
-def gen_surface(ctrlpts, p, q, res=50):
+def gen_surface(ctrlpts, p, q, res=50, trim_curves=None):
     """
     Generate a NURBS surface given control points and degrees.
 
@@ -523,6 +567,14 @@ def gen_surface(ctrlpts, p, q, res=50):
 
     # Set evaluation delta
     surf.delta = 1.0 / res
+
+    # Set trim curves
+    if trim_curves:
+        # Set surface tessellation component
+        surf.tessellator = tessellate.TrimTessellate()
+
+        # Set trim curves
+        surf.trims = trim_curves
 
     # Evaluate surface points
     surf.evaluate()
