@@ -23,13 +23,14 @@ pip install -r requirements.txt
 
 ## Usage
 
-Currently, we have one demo available for running. You can use the following command to run the demo. And the detail of `args` will be shown below.
+Currently, we have two demos available for running. You can use the following command to run the demo. And the detail of `args` will be shown below.
 
 ```bash
 python demo.py [-args args]
+python demo_clip.py [-args args]
 ```
 
-The `demo.py` will output the intersection curves between two NURBS surfaces. We only support one NURBS surface intersects w/ its transformed form.
+The `demo.py` will output the intersection curves between two NURBS surfaces. And the `demo_clip.py` will output the intersection w/ clipped surfaces. Feel free to modify the trimming curves.
 
 ### Arguments
 
