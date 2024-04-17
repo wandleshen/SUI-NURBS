@@ -161,7 +161,7 @@ def draw_surf(surf, renderer, isGreen=True):
             poly.GetPointIds().SetNumberOfIds(len(trimPtsArray))
             for idx, pt in enumerate(trimPtsArray):
                 poly.GetPointIds().SetId(idx, idx)
-            
+
             trimPolys.InsertNextCell(poly)
 
             # 创建单个的vtkPolyData对象
@@ -181,8 +181,8 @@ def draw_surf(surf, renderer, isGreen=True):
         # 使用clipper执行裁剪操作
         clipper = vtk.vtkClipPolyData()
         clipper.SetInputConnection(contours.GetOutputPort())
-        clipper.SetClipFunction(implicitPolyDataDistance)  # 使用vtkImplicitPolyDataDistance作为裁剪函数
-        # clipper.InsideOutOn()  # 如果需要的话裁剪外部
+        clipper.SetClipFunction(implicitPolyDataDistance)
+        clipper.InsideOutOn()
         output_port = clipper.GetOutputPort()
 
     polydata_mapper = vtk.vtkPolyDataMapper()
