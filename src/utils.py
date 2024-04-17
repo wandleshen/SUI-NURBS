@@ -65,6 +65,7 @@ def draw_aabb(pts, renderer, isRed=True, isGreen=False):
     actors = []
 
     def add_actor(pts):
+        appendFilter = vtk.vtkAppendPolyData()
         # Iterate over all given AABB diagonal pairs
         for min_point, max_point in zip(pts[:, 0], pts[:, 1]):
             # Create AABB box
@@ -78,26 +79,27 @@ def draw_aabb(pts, renderer, isRed=True, isGreen=False):
                 max_point[2],
             )
             box.Update()
+            appendFilter.AddInputData(box.GetOutput())
 
-            # Create mapper and actor
-            mapper = vtk.vtkPolyDataMapper()
-            mapper.SetInputConnection(box.GetOutputPort())
-            actor = vtk.vtkActor()
-            actor.SetMapper(mapper)
-            actor.GetProperty().SetRepresentationToWireframe()
-            actor.GetProperty().SetLighting(False)
+        # Create mapper and actor
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(appendFilter.GetOutputPort())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetRepresentationToWireframe()
+        actor.GetProperty().SetLighting(False)
 
-            # Set the color of the actor
-            if isRed:
-                actor.GetProperty().SetColor(1.0, 0.0, 0.0)
-            elif isGreen:
-                actor.GetProperty().SetColor(0.0, 1.0, 0.0)
-            else:
-                actor.GetProperty().SetColor(0.0, 0.0, 1.0)
+        # Set the color of the actor
+        if isRed:
+            actor.GetProperty().SetColor(1.0, 0.0, 0.0)
+        elif isGreen:
+            actor.GetProperty().SetColor(0.0, 1.0, 0.0)
+        else:
+            actor.GetProperty().SetColor(0.0, 0.0, 1.0)
 
-            # Add the actor to the renderer
-            renderer.AddActor(actor)
-            actors.append(actor)
+        # Add the actor to the renderer
+        renderer.AddActor(actor)
+        actors.append(actor)
 
     # Check if pts is a list or a numpy array
     if isinstance(pts, list):
@@ -105,6 +107,65 @@ def draw_aabb(pts, renderer, isRed=True, isGreen=False):
             add_actor(pt)
     else:
         add_actor(pts)
+
+    return actors
+
+
+def draw_paramter(aabbs, renderer, isGreen=True):
+    actors = []
+    box = vtk.vtkCubeSource()
+    box.SetBounds(0.0, 1.0, 0.0, 1.0, 0.0, 0.0)
+    box.Update()
+    # Create mapper and actor
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputConnection(box.GetOutputPort())
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetLighting(False)
+
+    # Set the color of the actor
+    if isGreen:
+        actor.GetProperty().SetColor(0.0, 1.0, 0.0)
+    else:
+        actor.GetProperty().SetColor(0.0, 1.0, 1.0)
+
+    # Add the actor to the renderer
+    renderer.AddActor(actor)
+    actors.append(actor)
+
+    # 创建一个 vtkPoints 对象来存所有中心点
+    points = vtk.vtkPoints()
+    # 创建一个 vtkCellArray 对象来存 sphere 的细胞索引
+    spheres = vtk.vtkCellArray()
+
+    for min_point, max_point in zip(aabbs[:, 0], aabbs[:, 1]):
+        center = (0.5 * (min_point + max_point)).tolist()
+        center.append(0.05)
+        idx = points.InsertNextPoint(center)
+        # 创建一个表示 sphere 的细胞
+        sphere = vtk.vtkVertex()
+        sphere.GetPointIds().SetId(0, idx)
+        spheres.InsertNextCell(sphere)
+
+    # 创建一个 polydata 对象
+    polydata = vtk.vtkPolyData()
+    polydata.SetPoints(points)
+    polydata.SetVerts(spheres)
+
+    # Create mapper and actor
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputData(polydata)
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    # actor.GetProperty().SetRepresentationToWireframe()
+    actor.GetProperty().SetLighting(False)
+
+    # Set the color of the actor
+    actor.GetProperty().SetColor(1.0, 0.0, 0.0)
+
+    # Add the actor to the renderer
+    renderer.AddActor(actor)
+    actors.append(actor)
 
     return actors
 
@@ -332,6 +393,8 @@ def render(
     stripped2,
     cluster1,
     curve,
+    uv1,
+    uv2,
     window_name="SUI-NURBS",
     width=1280,
     height=720,
@@ -417,8 +480,8 @@ def render(
     glfw.set_mouse_button_callback(window, on_mouse_button)
 
     # Initialize the checkboxes, changes and actors dictionary
-    checkboxes = [False, False, True, True, False, False, False, False]
-    changes = [False, False, False, False, False, False, False, False]
+    checkboxes = [False, False, True, True, False, False, False, False, False, False]
+    changes = [False, False, False, False, False, False, False, False, False, False]
     actors_dict = {}
 
     # Draw the surfaces
@@ -441,6 +504,8 @@ def render(
         changes[5], checkboxes[5] = imgui.checkbox("Stripped2", checkboxes[5])
         changes[6], checkboxes[6] = imgui.checkbox("Cluster Result", checkboxes[6])
         changes[7], checkboxes[7] = imgui.checkbox("Curve", checkboxes[7])
+        changes[8], checkboxes[8] = imgui.checkbox("Parameter1", checkboxes[8])
+        changes[9], checkboxes[9] = imgui.checkbox("Parameter2", checkboxes[9])
 
         # End the ImGui frame and render the ImGui output
         imgui.end()
@@ -527,6 +592,27 @@ def render(
             changes,
             checkboxes,
             curve,
+        )
+        handle_changes(
+            8,
+            "box1",
+            draw_paramter,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            uv1,
+        )
+        handle_changes(
+            9,
+            "box2",
+            draw_paramter,
+            renderer,
+            actors_dict,
+            changes,
+            checkboxes,
+            uv2,
+            isGreen=False,
         )
 
         # Render the ImGui output and swap the GLFW buffers

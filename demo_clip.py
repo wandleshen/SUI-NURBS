@@ -70,7 +70,7 @@ def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1)
     )
 
     col, col2 = region_extraction(pts, pts2)
-    stripped, stripped2, cluster, curve = gen_curves(
+    stripped, stripped2, cluster, curve, uv1, uv2 = gen_curves(
         u1, v1, col, surf, u2, v2, col2, surf2, scaler0, scaler1
     )
     extract, pts = utils.extract_aabb(pts, col)
@@ -85,6 +85,8 @@ def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1)
         stripped2,
         cluster,
         curve,
+        uv1,
+        uv2,
     )
 
 

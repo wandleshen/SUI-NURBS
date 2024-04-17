@@ -17,9 +17,11 @@ def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1)
 
     ctrlpts4d_rev = np.load(f"data/{filename1}")
 
-    surf = utils.gen_surface(ctrlpts4d.tolist(), p0, q0, 50)
+    RES = 50
 
-    surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), p1, q1, 50)
+    surf = utils.gen_surface(ctrlpts4d.tolist(), p0, q0, RES)
+
+    surf2 = utils.gen_surface(ctrlpts4d_rev.tolist(), p1, q1, RES)
 
     pts, u1, v1 = gen_aabb(
         torch.tensor(surf.knotvector_u, device=torch.device("cuda")),
@@ -44,7 +46,7 @@ def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1)
     )
 
     col, col2 = region_extraction(pts, pts2)
-    stripped, stripped2, cluster, curve = gen_curves(
+    stripped, stripped2, cluster, curve, uv1, uv2 = gen_curves(
         u1, v1, col, surf, u2, v2, col2, surf2, scaler0, scaler1
     )
     extract, pts = utils.extract_aabb(pts, col)
@@ -59,6 +61,8 @@ def main(filename0, filename1, m0, m1, n0, n1, p0, p1, q0, q1, scaler0, scaler1)
         stripped2,
         cluster,
         curve,
+        uv1,
+        uv2,
     )
 
 

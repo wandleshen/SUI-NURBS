@@ -591,4 +591,4 @@ def gen_curves(u1, v1, col1, surf1, u2, v2, col2, surf2, scaler1=100.0, scaler2=
                 -1, 2, 3
             )
         )
-    return uv3d1, uv3d2, aabb3d1, all_pts
+    return uv3d1, uv3d2, aabb3d1, all_pts, uv1 / scaler1, uv2 / scaler2
